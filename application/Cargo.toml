@@ -9,5 +9,6 @@ edition = "2021"
 server = { path = "../server" }
 vision = { path = "../vision" }
 corelib = { path = "../corelib" }
-async-std = { version = "1.10.0", features = ["attributes"] }
+tokio = { version = "*", features = ["full"] }
 futures = "*"
+rumqttc = "*"
