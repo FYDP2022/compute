@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 opencv = "0.61.0"
+tokio = { version = "*", features = ["full"] }

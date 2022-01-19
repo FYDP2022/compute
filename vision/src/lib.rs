@@ -13,7 +13,6 @@ impl VSLAM {
   }
 
   pub async fn run(&self) -> Result<(), String> {
-    println!("vision");
     const WIDTH: i32 = 1920;
     const HEIGHT: i32 = 1080;
   
