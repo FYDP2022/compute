@@ -1,12 +1,15 @@
 use server::mqtt::Broker;
 use vision::VSLAM;
 
-#[async_std::main]
+use futures::TryFutureExt;
+
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
   let broker = Broker::new();
   let vslam = VSLAM::new();
   futures::try_join!(
-    async_std::task::spawn(async move { broker.run().await }),
-    async_std::task::spawn(async move { vslam.run().await })
+    broker.run(),
+    tokio::spawn(async move { vslam.run().await })
+      .unwrap_or_else(|err| Err(err.to_string()))
   ).unwrap();
 }
