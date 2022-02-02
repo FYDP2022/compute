@@ -95,7 +95,7 @@ do_calibration = False
 
 # define video capture object
 
-stereo_camera = lib.camera.StereoCamera(lib.camera.StereoCamera.WIDTH, lib.camera.StereoCamera.HEIGHT)
+stereo_camera = lib.camera.StereoCamera(960, 540)
 
 # define display window names
 
@@ -675,9 +675,7 @@ while (keep_processing):
     except OSError:
       print("Exporting to existing calibration archive directory.")
     os.chdir('calibration')
-    folderName = time.strftime('%d-%m-%y-%H-%M-rms-') + \
-      ('%.2f' % rms_stereo) + '-zed-' + str(int(args.zed)) \
-      + '-ximea-' + str(int(args.ximea))
+    folderName = time.strftime('%d-%m-%y-%H-%M-rms')
     os.mkdir(folderName)
     os.chdir(folderName)
     np.save('mapL1', mapL1)
