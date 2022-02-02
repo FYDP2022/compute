@@ -1,18 +1,18 @@
-from enum import Enum
+from enum import IntEnum
 import queue
 import threading
 from typing import Any, Tuple
 import cv2 as cv
 
-class CameraIndex(Enum):
+class CameraIndex(IntEnum):
   LEFT = 0
   RIGHT = 1
 
 class StereoCamera:
   """Streams data from binocular camera sensor"""
 
-  WIDTH = 3280
-  HEIGHT = 2464
+  WIDTH = 1920
+  HEIGHT = 1080
 
   def __init__(self, width: int, height: int) -> 'StereoCamera':
     self.width = width
@@ -27,10 +27,10 @@ class StereoCamera:
       raise RuntimeError('failed to capture data from left camera')
     if not self.capture[CameraIndex.RIGHT].isOpened():
       raise RuntimeError('failed to capture data from right camera')
-    t1 = threading.Thread(target=self._reader, args=CameraIndex.LEFT)
+    t1 = threading.Thread(target=self._reader, args=[CameraIndex.LEFT])
     t1.daemon = True
     t1.start()
-    t2 = threading.Thread(target=self._reader, args=CameraIndex.RIGHT)
+    t2 = threading.Thread(target=self._reader, args=[CameraIndex.RIGHT])
     t2.daemon = True
     t2.start()
 
@@ -48,7 +48,7 @@ class StereoCamera:
       self.queue[camera].put(frame)
   
   def _cameraString(self, camera: CameraIndex) -> str:
-    '''
+    return """
       nvarguscamerasrc sensor-id={}
       ! video/x-raw(memory:NVMM),
         width={},
@@ -64,7 +64,7 @@ class StereoCamera:
       ! video/x-raw,
         format=(string)BGR
       ! appsink
-    '''.format(camera, StereoCamera.WIDTH, StereoCamera.HEIGHT, self.width, self.height)
+    """.format(camera, StereoCamera.WIDTH, StereoCamera.HEIGHT, self.width, self.height)
 
   def swapCameras(self):
     self.reverse = not self.reverse

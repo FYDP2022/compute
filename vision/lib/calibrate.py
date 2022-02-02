@@ -1,15 +1,14 @@
-from dataclasses import dataclass
 import os
 from typing import Any, Tuple
 import cv2 as cv
 import numpy as np
 
-@dataclass
 class CalibrationParameters:
-  mapL1: Any
-  mapL2: Any
-  mapR1: Any
-  mapR2: Any
+  def __init__(self, mapL1: Any, mapL2: Any, mapR1: Any, mapR2: Any) -> 'CalibrationParameters':
+    self.mapL1 = mapL1
+    self.mapL2 = mapL2
+    self.mapR1 = mapR1
+    self.mapR2 = mapR2
 
   def load(path: str) -> 'CalibrationParameters':
     CalibrationParameters(
