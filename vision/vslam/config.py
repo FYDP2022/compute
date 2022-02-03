@@ -8,6 +8,14 @@ class DebugWindows(IntEnum):
 
   def __contains__(self, item: 'DebugWindows'):
     return (self.value & item.value) == item.value
+  
+  def parse(input: str) -> 'DebugWindows':
+    if input == 'depth':
+      return DebugWindows.DEPTH
+    elif input == 'all':
+      return DebugWindows.ALL
+    else:
+      return DebugWindows.NONE
 
 class Config:
   def __init__(self, debug: bool = True, windows: DebugWindows = DebugWindows.NONE, dataPath: str = 'data') -> 'Config':

@@ -26,7 +26,7 @@ import numpy as np
 import os
 import argparse
 import time
-import lib
+import vslam
 
 #####################################################################
 # define target framerates in fps (may not be achieved)
@@ -95,7 +95,7 @@ do_calibration = False
 
 # define video capture object
 
-stereo_camera = lib.camera.StereoCamera(960, 540)
+stereo_camera = vslam.camera.StereoCamera(960, 540)
 
 # define display window names
 
