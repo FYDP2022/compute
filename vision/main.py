@@ -12,8 +12,8 @@ def main():
 
   CONFIG.windows = DebugWindows.parse(args.debug)
 
-  camera = StereoCamera(1920, 1080)
-  depth = DepthEstimator(1920, 1080)
+  camera = StereoCamera(960, 540)
+  depth = DepthEstimator(960, 540)
 
   while True:
     left, right = camera.read()

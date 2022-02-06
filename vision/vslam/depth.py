@@ -9,7 +9,9 @@ from vslam.parameters import CalibrationParameters
 class DepthEstimator:
   """Stereo depth estimation."""
 
-  WINDOW_NAME = 'SGBM'
+  DEPTH_WINDOW_NAME = 'SGBM'
+  LEFT_REMAP_WINDOW_NAME = 'REMAP.LEFT'
+  RIGHT_REMAP_WINDOW_NAME = 'REMAP.RIGHT'
   MAX_DISPARITY = 128
   BLOCK_SIZE = 21
   APPLY_COLORMAP = False
@@ -18,18 +20,31 @@ class DepthEstimator:
     self.width = width
     self.height = height
     if DebugWindows.DEPTH in CONFIG.windows:
-      cv.namedWindow(DepthEstimator.WINDOW_NAME, cv.WINDOW_NORMAL)
-      cv.resizeWindow(DepthEstimator.WINDOW_NAME, self.width, self.height)
+      cv.namedWindow(DepthEstimator.DEPTH_WINDOW_NAME, cv.WINDOW_NORMAL)
+      cv.resizeWindow(DepthEstimator.DEPTH_WINDOW_NAME, self.width, self.height)
+    if DebugWindows.REMAP in CONFIG.windows:
+      cv.namedWindow(DepthEstimator.LEFT_REMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
+      cv.resizeWindow(DepthEstimator.LEFT_REMAP_WINDOW_NAME, self.width, self.height)
+      cv.namedWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
+      cv.resizeWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, self.width, self.height)
     self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
     self.estimator = cv.StereoSGBM_create(0, DepthEstimator.MAX_DISPARITY, DepthEstimator.BLOCK_SIZE)
+  
+  def applyImageRemap(self, left: Any, right: Any) -> Any:
+    undistorted_rectifiedL = cv.remap(left, self.params.mapL1, self.params.mapL2, cv.INTER_LINEAR)
+    undistorted_rectifiedR = cv.remap(right, self.params.mapR1, self.params.mapR2, cv.INTER_LINEAR)
+    return undistorted_rectifiedL, undistorted_rectifiedR
 
   def process(self, left_gray: Any, right_gray: Any) -> Any:
     expected = (self.height, self.width)
     if left_gray.shape != expected or right_gray.shape != expected:
       raise RuntimeError('invalid stereo image shape')
 
-    undistorted_rectifiedL = cv.remap(left_gray, self.params.mapL1, self.params.mapL2, cv.INTER_LINEAR)
-    undistorted_rectifiedR = cv.remap(right_gray, self.params.mapR1, self.params.mapR2, cv.INTER_LINEAR)
+    undistorted_rectifiedL, undistorted_rectifiedR = self.applyImageRemap(left_gray, right_gray)
+
+    if DebugWindows.REMAP in CONFIG.windows:
+      cv.imshow(DepthEstimator.LEFT_REMAP_WINDOW_NAME, undistorted_rectifiedL)
+      cv.imshow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, undistorted_rectifiedR)
 
     disparity = self.estimator.compute(undistorted_rectifiedL, undistorted_rectifiedR)
     cv.filterSpeckles(disparity, 0, 40, DepthEstimator.MAX_DISPARITY)
@@ -44,6 +59,6 @@ class DepthEstimator:
       output = disparity_scaled
 
     if DebugWindows.DEPTH in CONFIG.windows:
-      cv.imshow(DepthEstimator.WINDOW_NAME, output)
+      cv.imshow(DepthEstimator.DEPTH_WINDOW_NAME, output)
 
     return output

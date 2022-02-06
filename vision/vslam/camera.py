@@ -6,6 +6,8 @@ import threading
 from typing import Any, List, Tuple
 import cv2 as cv
 
+from vslam.config import CONFIG, DebugWindows
+
 class CameraIndex(IntEnum):
   RIGHT = 0
   LEFT = 1
@@ -13,6 +15,8 @@ class CameraIndex(IntEnum):
 class StereoCamera:
   """Streams data from binocular camera sensor"""
 
+  LEFT_WINDOW_NAME = 'CAMERA.LEFT'
+  RIGHT_WINDOW_NAME = 'CAMERA.RIGHT'
   WIDTH = 1920
   HEIGHT = 1080
 
@@ -36,6 +40,11 @@ class StereoCamera:
     self.t2 = threading.Thread(target=self._reader, args=[CameraIndex.RIGHT])
     self.t2.daemon = True
     self.t2.start()
+    if DebugWindows.CAMERA in CONFIG.windows:
+      cv.namedWindow(StereoCamera.LEFT_WINDOW_NAME, cv.WINDOW_NORMAL)
+      cv.resizeWindow(StereoCamera.LEFT_WINDOW_NAME, self.width, self.height)
+      cv.namedWindow(StereoCamera.RIGHT_WINDOW_NAME, cv.WINDOW_NORMAL)
+      cv.resizeWindow(StereoCamera.RIGHT_WINDOW_NAME, self.width, self.height)
 
   def _signalHandler(self, sig, frame):
     self.stopped = True
@@ -79,10 +88,17 @@ class StereoCamera:
 
   def swapCameras(self):
     self.reverse = not self.reverse
-  
-  def read(self) -> Tuple[Any, Any]:
+
+  def _getFrame(self):
     if self.reverse:
       return (self.queue[CameraIndex.RIGHT].get(), self.queue[CameraIndex.LEFT].get())
     else:
       return (self.queue[CameraIndex.LEFT].get(), self.queue[CameraIndex.RIGHT].get())
+  
+  def read(self) -> Tuple[Any, Any]:
+    left, right = self._getFrame()
+    if DebugWindows.CAMERA in CONFIG.windows:
+      cv.imshow(StereoCamera.LEFT_WINDOW_NAME, left)
+      cv.imshow(StereoCamera.RIGHT_WINDOW_NAME, right)
+    return left, right
   

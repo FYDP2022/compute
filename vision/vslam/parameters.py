@@ -15,14 +15,14 @@ class CalibrationParameters:
       np.load(os.path.join(path, 'mapL1.npy')),
       np.load(os.path.join(path, 'mapL2.npy')),
       np.load(os.path.join(path, 'mapR1.npy')),
-      np.load(os.path.join(path, 'mapL1.npy'))
+      np.load(os.path.join(path, 'mapR2.npy'))
     )
 
   def save(self, path: str):
     np.save(os.path.join(path, 'mapL1.npy'), self.mapL1)
     np.save(os.path.join(path, 'mapL2.npy'), self.mapL2)
     np.save(os.path.join(path, 'mapR1.npy'), self.mapR2)
-    np.save(os.path.join(path, 'mapL1.npy'), self.mapL1)
+    np.save(os.path.join(path, 'mapR2.npy'), self.mapL1)
 
 class UndistortRectifier:
   """Applies stereo calibration to image."""
