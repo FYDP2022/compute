@@ -2,7 +2,5 @@
 
 members = [
   "corelib",
-  "vision",
   "server",
-  "application",
 ]
