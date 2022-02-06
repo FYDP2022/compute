@@ -12,8 +12,8 @@ class DepthEstimator:
   DEPTH_WINDOW_NAME = 'SGBM'
   LEFT_REMAP_WINDOW_NAME = 'REMAP.LEFT'
   RIGHT_REMAP_WINDOW_NAME = 'REMAP.RIGHT'
+  MIN_DISPARITY = 16
   MAX_DISPARITY = 128
-  BLOCK_SIZE = 21
   APPLY_COLORMAP = False
 
   def __init__(self, width: int, height: int) -> 'DepthEstimator':
@@ -28,7 +28,18 @@ class DepthEstimator:
       cv.namedWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, self.width, self.height)
     self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
-    self.estimator = cv.StereoSGBM_create(0, DepthEstimator.MAX_DISPARITY, DepthEstimator.BLOCK_SIZE)
+    window_size = 3
+    self.estimator = cv.StereoSGBM_create(
+      minDisparity=DepthEstimator.MIN_DISPARITY,
+      numDisparities=DepthEstimator.MAX_DISPARITY,
+      blockSize=16,
+      P1=8 * 3 * window_size ** 2,
+      P2=32 * 3 * window_size ** 2,
+      disp12MaxDiff=6,
+      uniquenessRatio=5,
+      speckleRange=32,
+      speckleWindowSize=100
+    )
   
   def applyImageRemap(self, left: Any, right: Any) -> Any:
     undistorted_rectifiedL = cv.remap(left, self.params.mapL1, self.params.mapL2, cv.INTER_LINEAR)
@@ -48,17 +59,15 @@ class DepthEstimator:
 
     disparity = self.estimator.compute(undistorted_rectifiedL, undistorted_rectifiedR)
     cv.filterSpeckles(disparity, 0, 40, DepthEstimator.MAX_DISPARITY)
-    _, disparity = cv.threshold(disparity, 0, DepthEstimator.MAX_DISPARITY * 16, cv.THRESH_TOZERO)
-    disparity_scaled = (disparity / 16.0).astype(np.uint8) * (256.0 / DepthEstimator.MAX_DISPARITY)
-    if DepthEstimator.APPLY_COLORMAP:
-      output = cv.applyColorMap(
-        disparity_scaled.astype(np.uint8),
-        cv.COLORMAP_HOT
-      )
-    else:
-      output = disparity_scaled
+    disparity = (disparity / 16.0 - DepthEstimator.MIN_DISPARITY) / DepthEstimator.MAX_DISPARITY
 
     if DebugWindows.DEPTH in CONFIG.windows:
-      cv.imshow(DepthEstimator.DEPTH_WINDOW_NAME, output)
+      display = disparity
+      if DepthEstimator.APPLY_COLORMAP:
+        display = cv.applyColorMap(
+          (disparity * 255.0).astype(np.uint8),
+          cv.COLORMAP_HOT
+        )
+      cv.imshow(DepthEstimator.DEPTH_WINDOW_NAME, display)
 
-    return output
+    return disparity
