@@ -1,28 +1,31 @@
 import os
 from typing import Any, Tuple
+from dataclasses import dataclass
 import cv2 as cv
 import numpy as np
 
+class CameraParameters:
+  BASELINE = 0.06 # 60mm baseline length
+  FOCAL_LENGTH = 0.0026 # 2.6mm focal length
+
+@dataclass
 class CalibrationParameters:
-  def __init__(self, mapL1: Any, mapL2: Any, mapR1: Any, mapR2: Any) -> 'CalibrationParameters':
-    self.mapL1 = mapL1
-    self.mapL2 = mapL2
-    self.mapR1 = mapR1
-    self.mapR2 = mapR2
+  mapL1: Any
+  mapL2: Any
+  mapR1: Any
+  mapR2: Any
+  Q: Any
 
   def load(path: str) -> 'CalibrationParameters':
+    cv_file = cv.FileStorage(os.path.join(path, 'calibration.xml'), cv.FILE_STORAGE_READ)
+    Q = cv_file.getNode("Q").mat()
     return CalibrationParameters(
       np.load(os.path.join(path, 'mapL1.npy')),
       np.load(os.path.join(path, 'mapL2.npy')),
       np.load(os.path.join(path, 'mapR1.npy')),
-      np.load(os.path.join(path, 'mapR2.npy'))
+      np.load(os.path.join(path, 'mapR2.npy')),
+      Q
     )
-
-  def save(self, path: str):
-    np.save(os.path.join(path, 'mapL1.npy'), self.mapL1)
-    np.save(os.path.join(path, 'mapL2.npy'), self.mapL2)
-    np.save(os.path.join(path, 'mapR1.npy'), self.mapR2)
-    np.save(os.path.join(path, 'mapR2.npy'), self.mapL1)
 
 class UndistortRectifier:
   """Applies stereo calibration to image."""
