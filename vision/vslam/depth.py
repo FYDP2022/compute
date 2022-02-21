@@ -59,10 +59,9 @@ class DepthEstimator:
 
     disparity = self.estimator.compute(undistorted_rectifiedL, undistorted_rectifiedR)
     cv.filterSpeckles(disparity, 0, 40, DepthEstimator.MAX_DISPARITY)
-    disparity = (disparity / 16.0 - DepthEstimator.MIN_DISPARITY) / DepthEstimator.MAX_DISPARITY
 
     if DebugWindows.DEPTH in CONFIG.windows:
-      display = disparity
+      display = (disparity / 16.0 - DepthEstimator.MIN_DISPARITY) / DepthEstimator.MAX_DISPARITY
       if DepthEstimator.APPLY_COLORMAP:
         display = cv.applyColorMap(
           (disparity * 255.0).astype(np.uint8),
