@@ -1,4 +1,5 @@
 from enum import Flag, unique
+from typing import Optional
 
 @unique
 class DebugWindows(Flag):
@@ -6,13 +7,15 @@ class DebugWindows(Flag):
   CAMERA = 1
   REMAP = 2
   DEPTH = 4
-  SIFT = 8
+  KEYPOINT = 8
   ALL = 15
 
   def __contains__(self, item: 'DebugWindows'):
     return (self.value & item.value) == item.value
   
-  def parse(input: str) -> 'DebugWindows':
+  def parse(input: Optional[str]) -> 'DebugWindows':
+    if input is None:
+      return DebugWindows.NONE
     split = input.replace(' ', '').split('|')
     result = DebugWindows.NONE
     if 'camera' in split:
@@ -21,8 +24,8 @@ class DebugWindows(Flag):
       result = result | DebugWindows.REMAP
     if 'depth' in split:
       result = result | DebugWindows.DEPTH
-    if 'sift' in split:
-      result = result | DebugWindows.SIFT
+    if 'keypoint' in split:
+      result = result | DebugWindows.KEYPOINT
     if 'all' in split:
       return DebugWindows.ALL
     return result
