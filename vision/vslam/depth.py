@@ -4,7 +4,7 @@ import cv2 as cv
 import numpy as np
 
 from vslam.config import CONFIG, DebugWindows
-from vslam.parameters import CalibrationParameters
+from vslam.parameters import CalibrationParameters, CameraParameters
 
 class DepthEstimator:
   """Stereo depth estimation."""
@@ -16,7 +16,7 @@ class DepthEstimator:
   MAX_DISPARITY = 128
   APPLY_COLORMAP = False
 
-  def __init__(self, width: int, height: int) -> 'DepthEstimator':
+  def __init__(self, width: int, height: int, params: CalibrationParameters) -> 'DepthEstimator':
     self.width = width
     self.height = height
     if DebugWindows.DEPTH in CONFIG.windows:
@@ -27,7 +27,7 @@ class DepthEstimator:
       cv.resizeWindow(DepthEstimator.LEFT_REMAP_WINDOW_NAME, self.width, self.height)
       cv.namedWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, self.width, self.height)
-    self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
+    self.params = params
     window_size = 3
     self.estimator = cv.StereoSGBM_create(
       minDisparity=DepthEstimator.MIN_DISPARITY,
@@ -69,5 +69,7 @@ class DepthEstimator:
           cv.COLORMAP_HOT
         )
       cv.imshow(DepthEstimator.DEPTH_WINDOW_NAME, display)
+
+    # disparity = (CameraParameters.BASELINE * CameraParameters.FOCAL_LENGTH) / disparity
 
     return disparity
