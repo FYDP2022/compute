@@ -37,6 +37,7 @@ class Config:
     interval: float = 5.0,
     windows: DebugWindows = DebugWindows.NONE,
     dataPath: str = 'data',
+    databasePath: str = 'com',
     width: int = 960,
     height: int = 540
   ) -> 'Config':
@@ -44,6 +45,7 @@ class Config:
     self.interval = interval
     self.windows = windows
     self.dataPath = dataPath
+    self.databasePath = databasePath
     self.width = width
     self.height = height
 
