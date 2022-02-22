@@ -24,6 +24,9 @@ class App:
     if DebugWindows.KEYPOINT in CONFIG.windows:
       cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(App.KEYPOINT_WINDOW_NAME, CONFIG.width, CONFIG.height)
+
+  def clear(self):
+    feature_database.clear()
   
   def run(self):
     try:
@@ -51,6 +54,7 @@ class App:
         features = [Feature.create(k, left, points3d, disparity, self.state) for k in kp]
         features = [f for f in features if f]
         adjust, processed = feature_database.process_features(self.state, features)
+        print(adjust)
         feature_database.apply_features(adjust.negate(), processed)
         # Timing & metrics
         delta = (current_time - last_time).total_seconds()

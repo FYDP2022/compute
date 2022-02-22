@@ -74,9 +74,9 @@ class Feature:
   
   def similarity(self, other: 'Feature') -> float:
     dist = np.linalg.norm(other.position_mean - self.position_mean)
-    overlap = 1.0 - max(dist / (self.radius_mean + self.radius_deviation + other.radius_mean + other.radius_deviation), 1.0)
+    overlap = 1.0 - min(dist / (self.radius_mean + self.radius_deviation + other.radius_mean + other.radius_deviation), 1.0)
     angle = angle_between(self.orientation_mean, other.orientation_mean)
-    alignment = 1.0 - max(angle / (self.orientation_deviation + other.orientation_deviation), 1.0)
+    alignment = 1.0 - min(angle / (self.orientation_deviation + other.orientation_deviation), 1.0)
     return overlap * alignment * (self.material == other.material)
   
   def merge(self, other: 'Feature') -> 'Feature':
@@ -90,14 +90,14 @@ class Feature:
       position_mean=self.incremental_mean(self.position_mean, other.position_mean, n),
       position_deviation=self.incremental_deviation(self.position_deviation, self.position_mean, other.position_deviation, n),
       orientation_mean=self.incremental_mean(self.orientation_mean, other.orientation_mean, n),
-      orientation_deviation=self.incremental_deviation(self.orientation_deviation, self.orientation_mean, other.orientation_deviation, n),
+      orientation_deviation=self.incremental_deviation(self.orientation_deviation, 0.0, other.orientation_deviation, n),
       radius_mean=self.incremental_mean(self.radius_mean, other.radius_mean, n),
       radius_deviation=self.incremental_deviation(self.radius_deviation, self.radius_mean, other.radius_deviation, n),
       material=self.material
     )
 
   def delta(self, other: 'Feature') -> Delta:
-    Delta(
+    return Delta(
       other.position_mean - self.position_mean,
       other.orientation_mean - self.orientation_mean
     )
@@ -116,7 +116,7 @@ class Feature:
   
   def value(self) -> str:
     return '''
-      {0.n}, {0.age}, {0.color[0]}, {0.color[1]}, {0.color[2]}, {0.position_mean[0]}, {0.position_mean[1]},
+      {0.id}, {0.n}, {0.age}, {0.color[0]}, {0.color[1]}, {0.color[2]}, {0.position_mean[0]}, {0.position_mean[1]},
       {0.position_mean[2]}, {0.position_deviation[0]}, {0.position_deviation[1]}, {0.position_deviation[2]},
       {0.orientation_mean[0]}, {0.orientation_mean[1]}, {0.orientation_mean[2]}, {0.orientation_deviation},
       {0.radius_mean}, {0.radius_deviation}, {0.material.value}
@@ -154,10 +154,10 @@ class ProcessedFeatures:
   processed: List[Tuple[Feature, Optional[Feature]]]
 
 class FeatureDatabase:
-  SIMILARITY_THRESHOLD = 0.8
+  SIMILARITY_THRESHOLD = 0.6
   # All fields except the primary key
   ALL = '''
-    n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
+    id, n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
     position_deviation_y, position_deviation_z, orientation_mean_x, orientation_mean_y, orientation_mean_z,
     orientation_deviation, radius_mean, radius_deviation, material
   '''
@@ -189,30 +189,43 @@ class FeatureDatabase:
         material INTEGER
       )
     ''')
-    self.last_frame: List[Feature] = None
+    cur.execute('SELECT MAX(id) FROM features')
+    row = cur.fetchone()
+    self.id_counter = row[0] if row[0] is not None else 1
   
   def update_features(self, frame: List[Feature]):
     cur = self.connection.cursor()
-    cur.execute('BEGIN TRANSACTION')
     for feature in frame:
+      if feature.id == 0:
+        feature.id = self.id_counter
+        self.id_counter += 1
       self.index.insert(feature)
-      cur.execute('INSERT OR REPLACE INTO features ({id_key}{all}) VALUES ({id_val}{feature})'.format(
-        id_key='id, ' if feature.id != 0 else '',
-        id_val='{}, '.format(feature.id) if feature.id != 0 else '',
+      cur.execute('INSERT OR REPLACE INTO features ({all}) VALUES ({feature})'.format(
         all=FeatureDatabase.ALL,
         feature=feature.value()
       ))
-    cur.execute('COMMIT')
+    self.connection.commit()
 
   def batch_select(self, ids: List[int]) -> List[Feature]:
     cur = self.connection.cursor()
-    cur.execute('BEGIN TRANSACTION')
     for id in ids:
       cur.execute('SELECT * FROM features WHERE id={}'.format(id))
-    cur.execute('COMMIT')
     rows = cur.fetchall()
     return [Feature.from_row(row) for row in rows]
 
+  def clear(self):
+    cur = self.connection.cursor()
+    cur.execute('DELETE FROM features')
+    self.connection.commit()
+    self.index = None
+    try:
+      os.remove(os.path.join(CONFIG.databasePath, 'spatialindex.data'))
+      os.remove(os.path.join(CONFIG.databasePath, 'spatialindex.index'))
+    except OSError:
+      pass
+    self.index = SpatialIndex()
+    self.id_counter = 1
+  
   def localize(self, frame: List[Feature]) -> State:
     # Robot is lost -> correlate feature frame to environment to determine starting location
     pass
@@ -224,7 +237,8 @@ class FeatureDatabase:
     for feature in frame:
       max_similarity = 0.0
       max_feature = None
-      for intersect in self.batch_select(self.index.intersection(feature.bbox())):
+      intersection = [id for id in self.index.intersection(feature.bbox())]
+      for intersect in self.batch_select(intersection):
         similarity = intersect.similarity(feature)
         if similarity > FeatureDatabase.SIMILARITY_THRESHOLD and similarity > max_similarity:
           max_feature = intersect
