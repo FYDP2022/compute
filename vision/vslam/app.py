@@ -1,4 +1,5 @@
 import os
+import traceback
 import cv2 as cv
 from datetime import datetime
 
@@ -25,35 +26,41 @@ class App:
       cv.resizeWindow(App.KEYPOINT_WINDOW_NAME, CONFIG.width, CONFIG.height)
   
   def run(self):
-    accum = 0.0
-    framerate = 0.0
-    n = 0
-    last_time = datetime.now()
-    current_time = datetime.now()
-    while True:
-      metrics = accum >= CONFIG.interval
-      if metrics:
-        print("Average framerate: {}".format(framerate / n))
-        accum = 0.0
-        framerate = 0.0
-        n = 0
-      left, right = self.camera.read()
-      grayL = cv.cvtColor(left, cv.COLOR_BGR2GRAY)
-      grayR = cv.cvtColor(right, cv.COLOR_BGR2GRAY)
-      disparity = self.depth.process(grayL, grayR)
-      kp = self.keypoint.detect(grayL)
-      if DebugWindows.KEYPOINT in CONFIG.windows:
-        display = cv.drawKeypoints(grayL, kp, left, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        cv.imshow(App.KEYPOINT_WINDOW_NAME, display)
-      points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
-      features = [Feature.create(k, left, points3d, disparity) for k in kp]
-      adjust, processed = feature_database.process_features(self.state, features)
-      feature_database.apply_features(adjust.negate(), processed)
-      # Timing & metrics
-      delta = (current_time - last_time).total_seconds()
-      accum += delta
-      framerate += 1.0 / delta
-      n += 1
-      last_time = current_time
+    try:
+      accum = 0.0
+      framerate = 0.0
+      n = 0
+      last_time = datetime.now()
       current_time = datetime.now()
-      cv.waitKey(30)
+      while True:
+        metrics = accum >= CONFIG.interval
+        if metrics:
+          print("Average framerate: {}".format(framerate / n))
+          accum = 0.0
+          framerate = 0.0
+          n = 0
+        left, right = self.camera.read()
+        grayL = cv.cvtColor(left, cv.COLOR_BGR2GRAY)
+        grayR = cv.cvtColor(right, cv.COLOR_BGR2GRAY)
+        disparity = self.depth.process(grayL, grayR)
+        kp = self.keypoint.detect(grayL)
+        if DebugWindows.KEYPOINT in CONFIG.windows:
+          display = cv.drawKeypoints(grayL, kp, left, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+          cv.imshow(App.KEYPOINT_WINDOW_NAME, display)
+        points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
+        features = [Feature.create(k, left, points3d, disparity, self.state) for k in kp]
+        features = [f for f in features if f]
+        adjust, processed = feature_database.process_features(self.state, features)
+        feature_database.apply_features(adjust.negate(), processed)
+        # Timing & metrics
+        delta = (current_time - last_time).total_seconds()
+        accum += delta
+        framerate += 1.0 / delta
+        n += 1
+        last_time = current_time
+        current_time = datetime.now()
+        cv.waitKey(30)
+    except Exception as e:
+      print('ERROR: {}'.format(e))
+      print(traceback.format_exc())
+      self.camera.close()

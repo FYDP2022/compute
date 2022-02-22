@@ -7,8 +7,8 @@ import threading
 from typing import Any, List, Tuple
 import cv2 as cv
 import numpy as np
-from vision.vslam.parameters import CameraParameters
-from vision.vslam.state import Vector
+from vslam.parameters import CameraParameters
+from vslam.state import Vector
 
 from vslam.config import CONFIG, DebugWindows
 
@@ -29,7 +29,7 @@ def angle_axis(axis, theta):
     [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]
   ])
 
-def normalize(vector: np.ndarray) -> np.ndarray:
+def normalize(vector: np.array) -> np.array:
   norm = np.linalg.norm(vector)
   if norm == 0.0:
     return vector
@@ -40,7 +40,7 @@ def angle_between(v1, v2):
     v2_u = normalize(v2)
     return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
 
-def pixel_ray(direction: Vector, i: float, j: float):
+def pixel_ray(direction: Vector, i: float, j: float) -> np.array:
   """
   Returns the ray vector given by the direction projected from the camera
   corresponding to the given image coords
@@ -68,6 +68,7 @@ class StereoCamera:
     self.reverse = False
     self.stopped = False
     self.queue = (queue.Queue(), queue.Queue())
+    self.barrier = threading.Barrier(2)
     self.capture: List[cv.VideoCapture] = [None, None]
     self.capture[CameraIndex.LEFT] = cv.VideoCapture(self._cameraString(CameraIndex.LEFT))
     self.capture[CameraIndex.RIGHT] = cv.VideoCapture(self._cameraString(CameraIndex.RIGHT))
@@ -77,10 +78,8 @@ class StereoCamera:
     if not self.capture[CameraIndex.RIGHT].isOpened():
       raise RuntimeError('failed to capture data from right camera')
     self.t1 = threading.Thread(target=self._reader, args=[CameraIndex.LEFT])
-    self.t1.daemon = True
     self.t1.start()
     self.t2 = threading.Thread(target=self._reader, args=[CameraIndex.RIGHT])
-    self.t2.daemon = True
     self.t2.start()
     if DebugWindows.CAMERA in CONFIG.windows:
       cv.namedWindow(StereoCamera.LEFT_WINDOW_NAME, cv.WINDOW_NORMAL)
@@ -88,17 +87,21 @@ class StereoCamera:
       cv.namedWindow(StereoCamera.RIGHT_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(StereoCamera.RIGHT_WINDOW_NAME, self.width, self.height)
 
-  def _signalHandler(self, sig, frame):
+  def close(self):
     self.stopped = True
     self.t1.join()
     self.t2.join()
     self.capture[CameraIndex.LEFT].release()
     self.capture[CameraIndex.RIGHT].release()
+
+  def _signalHandler(self, sig, frame):
+    self.close()
     sys.exit(0)
 
   def _reader(self, camera: CameraIndex):
     while not self.stopped:
       ret, frame = self.capture[camera].read()
+      self.barrier.wait()
       if not ret:
         raise RuntimeError('failed to read camera sensor: {}'.format(camera))
       if not self.queue[camera].empty():
