@@ -7,6 +7,8 @@ import numpy as np
 class CameraParameters:
   BASELINE = 0.06 # 60mm baseline length
   FOCAL_LENGTH = 0.0026 # 2.6mm focal length
+  FOVX = 73 # Horizontal field of view (degrees)
+  FOVY = 50 # Vertical field of view (degrees)
 
 @dataclass
 class CalibrationParameters:
