@@ -1,15 +1,16 @@
 import math
 from typing import Tuple
 from dataclasses import dataclass
+import numpy as np
 
 Color = Tuple[int, int, int]
 Position = Tuple[float, float, float]
 Vector = Tuple[float, float, float]
 
+@dataclass
 class Delta:
-  def __init__(self, delta_position: Vector = (0.0, 0.0, 0.0), delta_orientation: Vector = (0.0, 0.0, 0.0)) -> 'Delta':
-    self.delta_position = delta_position
-    self.delta_orientation = delta_orientation
+  delta_position: Vector = np.asarray((0.0, 0.0, 0.0))
+  delta_orientation: Vector = np.asarray((0.0, 0.0, 0.0))
   
   def negate(self) -> 'Delta':
     return Delta(
@@ -19,9 +20,9 @@ class Delta:
 
 @dataclass
 class State:
-  position: Position = (0.0, 0.0, 0.0)
-  forward: Vector = (0.0, 0.0, 1.0)
-  up: Vector = (0.0, 1.0, 0.0)
+  position: Position = np.asarray((0.0, 0.0, 0.0))
+  forward: Vector = np.asarray((0.0, 0.0, 1.0))
+  up: Vector = np.asarray((0.0, 1.0, 0.0))
   variance = math.inf    
   
   def apply_delta(self, delta: Delta) -> 'State':

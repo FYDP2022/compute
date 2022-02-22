@@ -1,3 +1,4 @@
+import json
 import math
 import os
 from rtree import index
@@ -24,40 +25,40 @@ class Feature:
   id: int = 0
   n: int = 1
   age: int = 0
-  color: Color = (0, 0, 0)
-  position_mean: Position = (0.0, 0.0, 0.0)
+  color: Color = np.asarray((0, 0, 0))
+  position_mean: Position = np.asarray((0.0, 0.0, 0.0))
   position_deviation: Vector = (math.inf, math.inf, math.inf)
-  orientation_mean: Vector = (0.0, 0.0, 1.0)
+  orientation_mean: Vector = np.asarray((0.0, 0.0, 1.0))
   orientation_deviation: float = math.inf
   radius_mean: float = 0.0
   radius_deviation: float = 0.0
-  material: Material = Material.BACKGROUND
+  material: Material = Material.UNDEFINED
 
   def create(kp, image, points3d, disparity, state: State) -> Optional['Feature']:
     THRESHOLD = 0.001
-    x, y = round(kp.pt.x), round(kp.pt.y)
+    x, y = round(kp.pt[0]), round(kp.pt[1])
     window_size = math.ceil(kp.size / 2.0)
-    color = (0, 0, 0)
+    color = np.asarray((0, 0, 0))
     n = 0.0
     depth = []
     for i in range(x - window_size, x + window_size):
       for j in range(x - window_size, y + window_size):
         if math.sqrt((i - x) ** 2 + (j - y) ** 2) <= window_size:
-          color = (1.0 / n) * (color * n + image[i][j])
-          if disparity[i][j] > THRESHOLD:
-            depth.append(points3d[i][j])
           n += 1.0
+          color = color * (n - 1) / n + np.asarray(image[i][j]) / n
+          if disparity[i][j] > THRESHOLD:
+            depth.append(float(points3d[i][j][2] / 1000.0)) # Q matrix was computed using mm
 
-    if len(depth) == 0:
+    if len(depth) < 2:
       return None
 
     right = np.cross(state.forward, state.up)
-    v = pixel_ray(state.forward, kp.pt.x, kp.pt.y)
+    v = pixel_ray(state.forward, kp.pt[0], kp.pt[1])
     radius = kp.size / 2.0
     
     return Feature(
-      color=color,
-      position_mean=state.position + v * points3d[math.round(kp.pt.x)][math.round(kp.pt.y)],
+      color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
+      position_mean=state.position + v * statistics.mean(depth),
       position_deviation=(statistics.stdev(depth) ** 2) * v,
       orientation_mean=math.cos(kp.angle) * right + math.sin(kp.angle) * state.up,
       orientation_deviation=math.pi,
@@ -81,9 +82,10 @@ class Feature:
   def merge(self, other: 'Feature') -> 'Feature':
     assert other.n == 1
     n = self.n + 1
+    color = self.incremental_mean(self.color, other.color, n)
     return Feature(
       id=self.id,
-      color=self.incremental_mean(self.color, other.color, n),
+      color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
       n=n,
       position_mean=self.incremental_mean(self.position_mean, other.position_mean, n),
       position_deviation=self.incremental_deviation(self.position_deviation, self.position_mean, other.position_deviation, n),
@@ -114,16 +116,17 @@ class Feature:
   
   def value(self) -> str:
     return '''
-      {.n}, {.age}, {.color_r}, {.color_g}, {.color_b}, {.position_mean_x}, {.position_mean_y},
-      {.position_mean_z}, {.position_deviation_x}, {.position_deviation_y}, {.position_deviation_z},
-      {.orientation_mean_x}, {.orientation_mean_y}, {.orientation_mean_z}, {.orientation_deviation},
-      {.radius_mean}, {.radius_deviation}, {.material}
+      {0.n}, {0.age}, {0.color[0]}, {0.color[1]}, {0.color[2]}, {0.position_mean[0]}, {0.position_mean[1]},
+      {0.position_mean[2]}, {0.position_deviation[0]}, {0.position_deviation[1]}, {0.position_deviation[2]},
+      {0.orientation_mean[0]}, {0.orientation_mean[1]}, {0.orientation_mean[2]}, {0.orientation_deviation},
+      {0.radius_mean}, {0.radius_deviation}, {0.material.value}
     '''.format(self)
   
   def from_row(row) -> 'Feature':
     return Feature(
-      row[0], row[1], row[2], (row[3], row[4], row[5]), (row[6], row[7], row[8]),
-      (row[9], row[10], row[11]), (row[12], row[13], row[14]), row[15], row[16], row[17], Material(row[18])
+      row[0], row[1], row[2], np.asarray((row[3], row[4], row[5])), np.asarray((row[6], row[7], row[8])),
+      np.asarray((row[9], row[10], row[11])), np.asarray((row[12], row[13], row[14])), row[15], row[16],
+      row[17], Material(row[18])
     )
 
 class SpatialIndex:
@@ -132,13 +135,10 @@ class SpatialIndex:
     property.dimension = 3
     property.dat_extension = 'data'
     property.idx_extension = 'index'
-    self.rtree = index.Rtree(os.path.join(CONFIG.databasePath, 'spatialindex'), properties=property)
+    self.rtree = index.Rtree(os.path.join(CONFIG.databasePath, 'spatialindex'), properties=property, interleaved=False)
 
   def insert(self, feature: Feature):
     self.rtree.insert(feature.id, feature.bbox())
-
-  def insert_all(self, generator: Generator[Tuple[int, BoundingBox]]):
-    self.rtree.insert(generator)
   
   def delete(self, id: int, bbox: BoundingBox):
     self.rtree.delete(id, bbox)
@@ -146,12 +146,12 @@ class SpatialIndex:
   def count(self) -> int:
     return self.rtree.count()
   
-  def intersection(self, box: BoundingBox) -> Generator[int]:
+  def intersection(self, box: BoundingBox) -> Generator[int, None, None]:
     return self.rtree.intersection(box)
 
 @dataclass
 class ProcessedFeatures:
-  processed: List[Tuple[Feature, Optional[Feature]]] = []
+  processed: List[Tuple[Feature, Optional[Feature]]]
 
 class FeatureDatabase:
   SIMILARITY_THRESHOLD = 0.8
@@ -195,6 +195,7 @@ class FeatureDatabase:
     cur = self.connection.cursor()
     cur.execute('BEGIN TRANSACTION')
     for feature in frame:
+      self.index.insert(feature)
       cur.execute('INSERT OR REPLACE INTO features ({id_key}{all}) VALUES ({id_val}{feature})'.format(
         id_key='id, ' if feature.id != 0 else '',
         id_val='{}, '.format(feature.id) if feature.id != 0 else '',
@@ -241,11 +242,13 @@ class FeatureDatabase:
   def apply_features(self, adjust: Delta, processed: ProcessedFeatures):
     add = []
     for feature, source in processed.processed:
-      feature.adjust(adjust)
       if source is not None:
+        self.index.delete(source.id, source.bbox())
+        feature.adjust(adjust)
         merged = source.merge(feature)
         add.append(merged)
       else:
+        feature.adjust(adjust)
         add.append(feature)
     self.update_features(add)
 
