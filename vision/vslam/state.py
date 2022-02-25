@@ -3,6 +3,7 @@ import math
 from typing import Any, List, Tuple
 from dataclasses import dataclass
 import numpy as np
+from vision.vslam.camera import angle_axis, normalize
 
 from vslam.database import VisualMeasurement
 from vslam.sensors import SensorMeasurement
@@ -31,11 +32,16 @@ class State:
   orientation_deviation: float = 0.0
   
   def apply_delta(self, delta: Delta) -> 'State':
-    State(
+    return State(
       position=self.position + delta.delta_position,
-      forward=self.forward + delta.delta_orientation,
-      up=self.up + delta.delta_orientation
+      forward=normalize(self.forward + delta.delta_orientation),
+      up=normalize(self.up + delta.delta_orientation)
     )
+  
+  def rotate(self, angle: float, axis: np.array):
+    mat = angle_axis(axis, angle)
+    self.forward = np.dot(mat, self.forward)
+    self.up = np.dot(mat, self.up)
 
 class ControlAction(Enum):
   NONE = 0

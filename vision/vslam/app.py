@@ -2,6 +2,7 @@ import os
 import traceback
 import cv2 as cv
 from datetime import datetime
+from vslam.slam import SLAM
 
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
@@ -21,6 +22,7 @@ class App:
     self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
     self.semantic = SemanticSegmentationModel()
     self.dynamics = DynamicsModel()
+    self.slam = SLAM()
     self.state = State()
     self.keypoint = cv.SIFT_create()
     if DebugWindows.KEYPOINT in CONFIG.windows:
@@ -48,17 +50,19 @@ class App:
         grayL = cv.cvtColor(left, cv.COLOR_BGR2GRAY)
         grayR = cv.cvtColor(right, cv.COLOR_BGR2GRAY)
         disparity = self.depth.process(grayL, grayR)
+        dynamics_delta = self.dynamics.step(self.state, ControlState())
+        estimate = self.state.apply_delta(dynamics_delta)
         kp = self.keypoint.detect(grayL)
         if DebugWindows.KEYPOINT in CONFIG.windows:
           display = cv.drawKeypoints(grayL, kp, left, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
           cv.imshow(App.KEYPOINT_WINDOW_NAME, display)
         points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
-        features = [Feature.create(k, left, points3d, disparity, self.state) for k in kp]
+        features = [Feature.create(k, left, points3d, disparity, estimate) for k in kp]
         features = [f for f in features if f]
-        dynamics_delta = self.dynamics.step(self.state, ControlState())
-        estimate = self.state.apply_delta(dynamics_delta)
+        vision_delta, probability = self.slam.step(estimate, ControlState(), features)
+        estimate = estimate.apply_delta(vision_delta)
         # TODO: add variance term computed from dynamics & sensor calculation
-        measurements, processed = feature_database.process_features(estimate, features)
+        processed, probability = feature_database.process_features(estimate, features)
         feature_database.apply_features(Delta(), processed)
         # Timing & metrics
         delta = (current_time - last_time).total_seconds()
