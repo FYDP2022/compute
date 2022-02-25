@@ -11,7 +11,7 @@ from vslam.database import Feature, feature_database
 from vslam.config import CONFIG, DebugWindows
 from vslam.depth import DepthEstimator
 from vslam.camera import StereoCamera
-from vslam.state import ControlState, Delta, State
+from vslam.state import ControlState, State
 
 class App:
   KEYPOINT_WINDOW_NAME = 'KEYPOINT'
@@ -57,13 +57,15 @@ class App:
           display = cv.drawKeypoints(grayL, kp, left, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
           cv.imshow(App.KEYPOINT_WINDOW_NAME, display)
         points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
-        features = [Feature.create(k, left, points3d, disparity, estimate) for k in kp]
+        features = [Feature.create(k, left, points3d, disparity) for k in kp]
         features = [f for f in features if f]
         vision_delta, probability = self.slam.step(estimate, ControlState(), features)
         estimate = estimate.apply_delta(vision_delta)
-        # TODO: add variance term computed from dynamics & sensor calculation
-        processed, probability = feature_database.process_features(estimate, features)
-        feature_database.apply_features(Delta(), processed)
+        # TODO: add variance term computed from dynamics & sensor calculation -> use SGD error to compute sigma
+        processed, probability = feature_database.observe(estimate, features)
+        feature_database.apply_features(processed)
+        self.state = estimate
+        print(self.state)
         # Timing & metrics
         delta = (current_time - last_time).total_seconds()
         accum += delta
