@@ -3,14 +3,8 @@ import math
 from typing import Any, List, Tuple
 from dataclasses import dataclass
 import numpy as np
-from vision.vslam.camera import angle_axis, normalize
 
-from vslam.database import VisualMeasurement
-from vslam.sensors import SensorMeasurement
-
-Color = Tuple[int, int, int]
-Position = Tuple[float, float, float]
-Vector = Tuple[float, float, float]
+from vslam.utils import Position, Vector, angle_axis, normalize
 
 @dataclass
 class Delta:
@@ -51,7 +45,7 @@ class ControlState:
   action: ControlAction = ControlAction.NONE
   value: Any = None
 
-@dataclass
-class Measurement:
-  visual_measurements: List[VisualMeasurement] = []
-  sensor_measurement: SensorMeasurement = Delta()
+# @dataclass
+# class Measurement:
+#   visual_measurements: List[VisualMeasurement] = []
+#   sensor_measurement: SensorMeasurement = Delta()

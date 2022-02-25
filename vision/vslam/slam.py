@@ -1,16 +1,15 @@
 import math
 from typing import List, Tuple
 import numpy as np
-from particlefilter import ParticleFilterLoc
-import copy
 
-from vslam.camera import angle_axis
-from vslam.state import ControlState, Delta, Measurement, State
+from vslam.state import Delta
+from vslam.utils import angle_axis
+from vslam.state import ControlState, Delta, State
 from vslam.database import Feature, feature_database
 
 def find_orthogonal_axes(v: np.array) -> Tuple[np.array, np.array]:
   x = np.random.randn(3)
-  while x == v:
+  while np.array_equal(x, v):
     x = np.random.randn(3)
   x -= x.dot(v) * v
   x /= np.linalg.norm(x)
@@ -42,7 +41,9 @@ class SLAM:
     # Apply Gradient Ascent on visual measurement probability by computing derivatives
     # using the fundamental theorem of calculus
     delta = Delta()
-    last_probability = feature_database.observe(estimate, frame)
+    _, last_probability = feature_database.observe(estimate, frame)
+    if last_probability == 0.0:
+      return delta, 0.0
     lr = LR
     for _ in range(MAX_ITERATIONS):
       if last_probability > PROBABILITY_THRESHOLD:

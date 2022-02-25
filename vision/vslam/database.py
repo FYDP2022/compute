@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 import math
 import os
@@ -10,10 +11,10 @@ from typing import Any, Generator, List, Optional, Tuple
 from dataclasses import dataclass
 import numpy as np
 
-from vslam.camera import angle_between, normalize, pixel_ray, projection
+from vslam.utils import Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection
 from vslam.config import CONFIG
 from vslam.segmentation import Material
-from vslam.state import Color, Delta, Position, State, Vector
+from vslam.state import Delta, State
 
 # NOTE: bounding boxes are in the form (x1, x2, y1, y2, z1, z2)
 BoundingBox = Tuple[float, float, float, float, float, float]
@@ -43,7 +44,10 @@ class Feature:
   radius_deviation: float = 0.0
   material: Material = Material.UNDEFINED
 
-  def create(kp, image, points3d, disparity, state: State) -> Optional['Feature']:
+  def create(kp, image, points3d, disparity) -> Optional['Feature']:
+    X_AXIS = np.asarray([1.0, 0.0, 0.0])
+    Y_AXIS = np.asarray([0.0, 1.0, 0.0])
+    Z_AXIS = np.asarray([0.0, 0.0, 1.0])
     THRESHOLD = 0.001
     SIZE_THRESHOLD = 3.0
     x, y = round(kp.pt[0]), round(kp.pt[1])
@@ -64,15 +68,13 @@ class Feature:
     if len(depth) < 2:
       return None
 
-    right = np.cross(state.forward, state.up)
-    v = pixel_ray(state.forward, kp.pt[0], kp.pt[1])
     radius = kp.size / 2.0
     
     return Feature(
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
-      position_mean=state.position + v * statistics.mean(depth),
-      position_deviation=(statistics.stdev(depth) ** 2) * v,
-      orientation_mean=math.cos(kp.angle) * right + math.sin(kp.angle) * state.up,
+      position_mean=Z_AXIS * statistics.mean(depth),
+      position_deviation=(statistics.stdev(depth) ** 2) * Z_AXIS,
+      orientation_mean=math.cos(kp.angle) * X_AXIS + math.sin(kp.angle) * Y_AXIS,
       orientation_deviation=math.pi,
       radius_mean=radius,
       radius_deviation=1.0 - kp.response
@@ -170,6 +172,14 @@ class Feature:
       other.position_mean - state.position
     )
   
+  def apply_basis(self, basis: State) -> 'Feature':
+    clone = deepcopy(self)
+    clone.position_mean += basis.position
+    angle = angle_between(basis.forward, clone.orientation_mean)
+    axis = np.cross(clone.orientation_mean, basis.forward)
+    clone.orientation_mean = normalize(np.dot(angle_axis(axis, angle), clone.orientation_mean))
+    return clone
+  
   def adjust(self, delta: Delta):
     self.position_mean += delta.delta_position
     self.orientation_mean += delta.delta_orientation
@@ -222,7 +232,7 @@ class ProcessedFeatures:
   processed: List[Tuple[Feature, Optional[Feature]]]
 
 class FeatureDatabase:
-  SIMILARITY_THRESHOLD = 0.6
+  SIMILARITY_THRESHOLD = 0.25
   # All fields except the primary key
   ALL = '''
     id, n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
@@ -305,11 +315,12 @@ class FeatureDatabase:
     probability_accum = 0.0
     n = 0
     for feature in frame:
+      transformed = feature.apply_basis(estimate)
       max_probability = 0.0
       max_feature = None
-      intersection = [id for id in self.index.intersection(feature.bbox())]
+      intersection = [id for id in self.index.intersection(transformed.bbox())]
       for intersect in self.batch_select(intersection):
-        probability = intersect.probability(feature, estimate)
+        probability = intersect.probability(transformed, estimate)
         if probability > max_probability:
           max_feature = intersect
           max_probability = probability
@@ -317,25 +328,26 @@ class FeatureDatabase:
         n += 1
         if process:
           if max_probability >= FeatureDatabase.SIMILARITY_THRESHOLD:
-            processed.append((feature, max_feature))
+            processed.append((transformed, max_feature))
           else:
-            processed.append((feature, None))
+            processed.append((transformed, None))
         probability_accum += max_probability
       elif process:
-        processed.append((feature, None))
+        processed.append((transformed, None))
 
-    return ProcessedFeatures(processed), probability_accum / float(n)
+    if n == 0:
+      return ProcessedFeatures(processed), 0.0
+    else:
+      return ProcessedFeatures(processed), probability_accum / float(n)
   
-  def apply_features(self, last_to_next: Delta, processed: ProcessedFeatures):
+  def apply_features(self, processed: ProcessedFeatures):
     add = []
     for feature, source in processed.processed:
       if source is not None:
         self.index.delete(source.id, source.bbox())
-        feature.adjust(last_to_next)
         merged = source.merge(feature)
         add.append(merged)
       else:
-        feature.adjust(last_to_next)
         add.append(feature)
     self.update_features(add)
 
