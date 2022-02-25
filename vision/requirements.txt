@@ -2,3 +2,6 @@ scikit-build
 opencv-contrib-python
 dataclasses
 Rtree
+Cython
+slam3d
+scipy

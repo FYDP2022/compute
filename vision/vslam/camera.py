@@ -36,9 +36,15 @@ def normalize(vector: np.array) -> np.array:
   return vector / norm 
 
 def angle_between(v1, v2):
-    v1_u = normalize(v1)
-    v2_u = normalize(v2)
-    return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+  v1_u = normalize(v1)
+  v2_u = normalize(v2)
+  return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+def projection(x: np.array, y: np.array) -> np.array:
+  """
+  Projection of x onto y.
+  """
+  return np.dot(x, y) / np.linalg.norm(y)
 
 def pixel_ray(direction: Vector, i: float, j: float) -> np.array:
   """

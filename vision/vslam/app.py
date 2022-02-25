@@ -3,13 +3,14 @@ import traceback
 import cv2 as cv
 from datetime import datetime
 
+from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
 from vslam.parameters import CalibrationParameters
 from vslam.database import Feature, feature_database
 from vslam.config import CONFIG, DebugWindows
 from vslam.depth import DepthEstimator
 from vslam.camera import StereoCamera
-from vslam.state import State
+from vslam.state import ControlState, Delta, State
 
 class App:
   KEYPOINT_WINDOW_NAME = 'KEYPOINT'
@@ -19,6 +20,7 @@ class App:
     self.camera = StereoCamera(CONFIG.width, CONFIG.height)
     self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
     self.semantic = SemanticSegmentationModel()
+    self.dynamics = DynamicsModel()
     self.state = State()
     self.keypoint = cv.SIFT_create()
     if DebugWindows.KEYPOINT in CONFIG.windows:
@@ -53,9 +55,11 @@ class App:
         points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
         features = [Feature.create(k, left, points3d, disparity, self.state) for k in kp]
         features = [f for f in features if f]
-        adjust, processed = feature_database.process_features(self.state, features)
-        print(adjust)
-        feature_database.apply_features(adjust.negate(), processed)
+        dynamics_delta = self.dynamics.step(self.state, ControlState())
+        estimate = self.state.apply_delta(dynamics_delta)
+        # TODO: add variance term computed from dynamics & sensor calculation
+        measurements, processed = feature_database.process_features(estimate, features)
+        feature_database.apply_features(Delta(), processed)
         # Timing & metrics
         delta = (current_time - last_time).total_seconds()
         accum += delta
