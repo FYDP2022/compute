@@ -41,7 +41,8 @@ class SLAM:
     # Apply Gradient Ascent on visual measurement probability by computing derivatives
     # using the fundamental theorem of calculus
     delta = Delta()
-    _, last_probability = feature_database.observe(estimate, frame)
+    _, last_probability = feature_database.observe(estimate, frame, False)
+    print(last_probability)
     if last_probability == 0.0:
       return delta, 0.0
     lr = LR
@@ -51,7 +52,7 @@ class SLAM:
       position_gradient = []
       for axis in SLAM.BASIS:
         positive = Delta(delta.delta_position + axis * RESOLUTION_POSITION, delta.delta_orientation)
-        _, p_upper = feature_database.observe(estimate.apply_delta(positive), frame)
+        _, p_upper = feature_database.observe(estimate.apply_delta(positive), frame, False)
         p_lower = last_probability
         position_gradient.append((p_upper - p_lower) / RESOLUTION_POSITION)
       orientation_gradient = []
@@ -59,16 +60,20 @@ class SLAM:
       for axis in rotation_axes:
         positive = estimate.apply_delta(delta)
         positive.rotate(RESOLUTION_ANGLE, axis)
-        _, p_upper = feature_database.observe(positive, frame)
+        _, p_upper = feature_database.observe(positive, frame, False)
         p_lower = last_probability
         orientation_gradient.append((p_upper - p_lower) / RESOLUTION_ANGLE)
-      delta.delta_position += LR * np.asarray(position_gradient)
+      next = Delta()
+      next.delta_position += LR * np.asarray(position_gradient)
       orientation = estimate.forward + delta.delta_orientation
       orientation = np.dot(angle_axis(rotation_axes[0], LR * orientation_gradient[0]), orientation)
       orientation = np.dot(angle_axis(rotation_axes[1], LR * orientation_gradient[1]), orientation)
-      delta.delta_orientation = orientation - estimate.forward
-      _, probability = feature_database.observe(estimate.apply_delta(delta), frame)
+      next.delta_orientation = orientation - estimate.forward
+      _, probability = feature_database.observe(estimate.apply_delta(next), frame, False)
       if probability <= last_probability:
         break
       lr *= DECAY
+      last_probability = probability
+      delta = next
+      print(probability)
     return delta, last_probability

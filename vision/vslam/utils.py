@@ -9,6 +9,10 @@ Color = Tuple[int, int, int]
 Position = Tuple[float, float, float]
 Vector = Tuple[float, float, float]
 
+X_AXIS = np.asarray([1.0, 0.0, 0.0])
+Y_AXIS = np.asarray([0.0, 1.0, 0.0])
+Z_AXIS = np.asarray([0.0, 0.0, 1.0])
+
 def angle_axis(axis, theta):
   """
   Return the rotation matrix associated with counterclockwise rotation about
@@ -41,14 +45,18 @@ def projection(x: np.array, y: np.array) -> np.array:
   """
   Projection of x onto y.
   """
-  return np.dot(x, y) / np.linalg.norm(y)
+  norm = np.linalg.norm(y)
+  if norm == 0.0:
+    return 0.0
+  else:
+    return np.dot(x, y) / norm
 
 def pixel_ray(direction: Vector, i: float, j: float) -> np.array:
   """
   Returns the ray vector given by the direction projected from the camera
   corresponding to the given image coords
   """
-  xang = -((i / CONFIG.width) * CameraParameters.FOVX - CameraParameters.FOVX / 2.0)
-  yang = -((j / CONFIG.height) * CameraParameters.FOVY - CameraParameters.FOVY / 2.0)
-  rotation = np.dot(angle_axis(direction, math.radians(xang)), angle_axis(direction, math.radians(yang)))
+  xang = -((i / float(CONFIG.width)) * CameraParameters.FOVX - CameraParameters.FOVX / 2.0)
+  yang = -((j / float(CONFIG.height)) * CameraParameters.FOVY - CameraParameters.FOVY / 2.0)
+  rotation = np.dot(angle_axis(X_AXIS, math.radians(xang)), angle_axis(Y_AXIS, math.radians(yang)))
   return normalize(np.dot(rotation, direction))
