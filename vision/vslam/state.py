@@ -29,7 +29,9 @@ class State:
     return State(
       position=self.position + delta.delta_position,
       forward=normalize(self.forward + delta.delta_orientation),
-      up=normalize(self.up + delta.delta_orientation)
+      up=normalize(self.up + delta.delta_orientation),
+      position_deviation=self.position_deviation,
+      orientation_deviation=self.orientation_deviation
     )
   
   def rotate(self, angle: float, axis: np.array):

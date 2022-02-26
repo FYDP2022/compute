@@ -11,7 +11,8 @@ from typing import Any, Generator, List, Optional, Tuple
 from dataclasses import dataclass
 import numpy as np
 
-from vslam.utils import Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection
+from vslam.parameters import CameraParameters
+from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection
 from vslam.config import CONFIG
 from vslam.segmentation import Material
 from vslam.state import Delta, State
@@ -45,9 +46,6 @@ class Feature:
   material: Material = Material.UNDEFINED
 
   def create(kp, image, points3d, disparity) -> Optional['Feature']:
-    X_AXIS = np.asarray([1.0, 0.0, 0.0])
-    Y_AXIS = np.asarray([0.0, 1.0, 0.0])
-    Z_AXIS = np.asarray([0.0, 0.0, 1.0])
     THRESHOLD = 0.001
     SIZE_THRESHOLD = 3.0
     x, y = round(kp.pt[0]), round(kp.pt[1])
@@ -68,12 +66,14 @@ class Feature:
     if len(depth) < 2:
       return None
 
-    radius = kp.size / 2.0
+    mean_depth = statistics.mean(depth)
+    radius = math.tan(math.radians(CameraParameters.FOVX / 2.0) * (kp.size / 2.0) / CONFIG.width) * mean_depth
+    v = pixel_ray(Z_AXIS, kp.pt[0], kp.pt[1])
     
     return Feature(
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
-      position_mean=Z_AXIS * statistics.mean(depth),
-      position_deviation=(statistics.stdev(depth) ** 2) * Z_AXIS,
+      position_mean=v * mean_depth,
+      position_deviation=(statistics.stdev(depth) ** 2) * v,
       orientation_mean=math.cos(kp.angle) * X_AXIS + math.sin(kp.angle) * Y_AXIS,
       orientation_deviation=math.pi,
       radius_mean=radius,
@@ -101,7 +101,7 @@ class Feature:
     r = normalize(delta_p)
 
     # Projection of deviation vector onto r for both features
-    position_deviation = abs(projection(other.position_deviation, r))
+    position_deviation = abs(projection(other.position_deviation, r)) + abs(projection(self.position_deviation, r))
     return position_deviation
   
   def similarity(self, other: 'Feature', estimate: State) -> float:
@@ -128,25 +128,32 @@ class Feature:
     # NOTE: we are assuming that position, radius & orientation are independent
     # Compute deviations
     dp = self.deviation(other)
-    dp += estimate.position_deviation
+    dp += self.radius_deviation * self.radius_mean + other.radius_deviation * other.radius_mean
     delta_p = other.position_mean - self.position_mean
     r = np.linalg.norm(delta_p)
-    # Compute the sigma value (num deviations from mean) of difference between features (based
-    # on distributions projected onto the line subtending features)
-    upper_p = (r + self.radius_mean) / dp
-    lower_p = (r - self.radius_mean) / dp
-    # Computes P(r is within boundaries of z) using CDF of standard normal distribution
-    position_probability = st.norm.cdf(upper_p) - st.norm.cdf(lower_p)
+    position_probability = 1.0 if r == 0.0 else 0.0
+    if dp > 0.0:
+      # Compute the sigma value (num deviations from mean) of difference between features (based
+      # on distributions projected onto the line subtending features)
+      # Marginal probability along radial vector delta_p
+      # 
+      upper_p = (self.radius_mean - r) / dp
+      lower_p = (-self.radius_mean - r) / dp
+      # Computes P(r is within boundaries of z) using CDF of standard normal distribution
+      position_probability = st.norm.cdf(upper_p) - st.norm.cdf(lower_p)
     delta_r = abs(other.radius_mean - self.radius_mean)
-    upper_r = delta_r / self.radius_deviation + 1
-    lower_r = delta_r / self.radius_deviation - 1
-    # Computes P(radius of yt is within 1 stddev of z) using CDF of standard normal distribution
-    radius_probability = st.norm.cdf(upper_r) - st.norm.cdf(lower_r)
+    radius_probability = 1.0 if delta_r == 0.0 else 0.0
+    if delta_r > 0.0:
+      upper_r = (1 / delta_r) / self.radius_deviation
+      lower_r = -(1 / delta_r) / self.radius_deviation
+      # Computes P(radius of yt is within 1 stddev of z) using CDF of standard normal distribution
+      radius_probability = st.norm.cdf(upper_r) - st.norm.cdf(lower_r)
     angle = angle_between(self.orientation_mean, other.orientation_mean)
-    do = self.orientation_deviation + estimate.orientation_deviation
-    upper_o = angle / do + 1
-    lower_o = angle / do - 1
+    do = self.orientation_deviation + other.orientation_deviation
+    upper_o = (1 / angle) / do
+    lower_o = -(1 / angle) / do
     orientation_probability = st.norm.cdf(upper_o) - st.norm.cdf(lower_o)
+    print("B: {}, {}, {}".format(position_probability, radius_probability, orientation_probability))
     return position_probability * radius_probability * orientation_probability
   
   def merge(self, other: 'Feature') -> 'Feature':
@@ -184,8 +191,8 @@ class Feature:
     self.position_mean += delta.delta_position
     self.orientation_mean += delta.delta_orientation
   
-  def bbox(self) -> BoundingBox:
-    radius = self.radius_mean + self.radius_deviation
+  def bbox(self, deviation: float) -> BoundingBox:
+    radius = self.radius_mean + self.radius_deviation + deviation
     return (
       self.position_mean[0] - radius, self.position_mean[0] + radius,
       self.position_mean[1] - radius, self.position_mean[1] + radius,
@@ -216,7 +223,7 @@ class SpatialIndex:
     self.rtree = index.Rtree(os.path.join(CONFIG.databasePath, 'spatialindex'), properties=property, interleaved=False)
 
   def insert(self, feature: Feature):
-    self.rtree.insert(feature.id, feature.bbox())
+    self.rtree.insert(feature.id, feature.bbox(0.0))
   
   def delete(self, id: int, bbox: BoundingBox):
     self.rtree.delete(id, bbox)
@@ -232,7 +239,7 @@ class ProcessedFeatures:
   processed: List[Tuple[Feature, Optional[Feature]]]
 
 class FeatureDatabase:
-  SIMILARITY_THRESHOLD = 0.25
+  SIMILARITY_THRESHOLD = 0.10
   # All fields except the primary key
   ALL = '''
     id, n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
@@ -318,7 +325,7 @@ class FeatureDatabase:
       transformed = feature.apply_basis(estimate)
       max_probability = 0.0
       max_feature = None
-      intersection = [id for id in self.index.intersection(transformed.bbox())]
+      intersection = [id for id in self.index.intersection(transformed.bbox(estimate.position_deviation))]
       for intersect in self.batch_select(intersection):
         probability = intersect.probability(transformed, estimate)
         if probability > max_probability:
@@ -344,7 +351,7 @@ class FeatureDatabase:
     add = []
     for feature, source in processed.processed:
       if source is not None:
-        self.index.delete(source.id, source.bbox())
+        self.index.delete(source.id, source.bbox(0.0))
         merged = source.merge(feature)
         add.append(merged)
       else:
