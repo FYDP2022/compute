@@ -19,7 +19,10 @@ def angle_axis(axis, theta):
   the given axis by theta radians.
   """
   axis = np.asarray(axis)
-  axis = axis / math.sqrt(np.dot(axis, axis))
+  dot = np.dot(axis, axis)
+  if theta == 0.0 or dot == 0.0:
+    return np.identity(3)
+  axis = axis / math.sqrt(dot)
   a = math.cos(theta / 2.0)
   b, c, d = -axis * math.sin(theta / 2.0)
   aa, bb, cc, dd = a * a, b * b, c * c, d * d
@@ -60,3 +63,12 @@ def pixel_ray(direction: Vector, i: float, j: float) -> np.array:
   yang = -((j / float(CONFIG.height)) * CameraParameters.FOVY - CameraParameters.FOVY / 2.0)
   rotation = np.dot(angle_axis(X_AXIS, math.radians(xang)), angle_axis(Y_AXIS, math.radians(yang)))
   return normalize(np.dot(rotation, direction))
+
+def find_orthogonal_axes(v: np.array) -> Tuple[np.array, np.array]:
+  x = np.random.randn(3)
+  while np.array_equal(x, v):
+    x = np.random.randn(3)
+  x -= x.dot(v) * v
+  x /= np.linalg.norm(x)
+  y = np.cross(v, x)
+  return x, y

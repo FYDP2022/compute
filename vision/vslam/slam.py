@@ -3,18 +3,9 @@ from typing import List, Tuple
 import numpy as np
 
 from vslam.state import Delta
-from vslam.utils import angle_axis
+from vslam.utils import angle_axis, find_orthogonal_axes
 from vslam.state import ControlState, Delta, State
 from vslam.database import Feature, feature_database
-
-def find_orthogonal_axes(v: np.array) -> Tuple[np.array, np.array]:
-  x = np.random.randn(3)
-  while np.array_equal(x, v):
-    x = np.random.randn(3)
-  x -= x.dot(v) * v
-  x /= np.linalg.norm(x)
-  y = np.cross(v, x)
-  return x, y
 
 class SLAM:
   """

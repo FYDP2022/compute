@@ -66,14 +66,14 @@ class Feature:
     if len(depth) < 2:
       return None
 
-    mean_depth = statistics.mean(depth)
-    radius = math.tan(math.radians(CameraParameters.FOVX / 2.0) * (kp.size / 2.0) / CONFIG.width) * mean_depth
+    median_depth = statistics.median(depth)
+    radius = math.tan(math.radians(CameraParameters.FOVX / 2.0) * (kp.size / 2.0) / CONFIG.width) * median_depth
     v = pixel_ray(Z_AXIS, kp.pt[0], kp.pt[1])
     
     return Feature(
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
-      position_mean=v * mean_depth,
-      position_deviation=(statistics.stdev(depth) ** 2) * v,
+      position_mean=v * median_depth,
+      position_deviation=statistics.stdev(depth) * v,
       orientation_mean=math.cos(kp.angle) * X_AXIS + math.sin(kp.angle) * Y_AXIS,
       orientation_deviation=math.pi,
       radius_mean=radius,
@@ -136,7 +136,7 @@ class Feature:
       # Compute the sigma value (num deviations from mean) of difference between features (based
       # on distributions projected onto the line subtending features)
       # Marginal probability along radial vector delta_p
-      # 
+      # Pr(r <= self.radius_mean) written in standard normal distribution
       upper_p = (self.radius_mean - r) / dp
       lower_p = (-self.radius_mean - r) / dp
       # Computes P(r is within boundaries of z) using CDF of standard normal distribution
@@ -153,20 +153,26 @@ class Feature:
     upper_o = (1 / angle) / do
     lower_o = -(1 / angle) / do
     orientation_probability = st.norm.cdf(upper_o) - st.norm.cdf(lower_o)
-    print("B: {}, {}, {}".format(position_probability, radius_probability, orientation_probability))
+    # print("B: {}, {}, {}".format(position_probability, radius_probability, orientation_probability))
     return position_probability * radius_probability * orientation_probability
+  
+  def angles(self) -> Tuple[float, float]:
+    z_angle = angle_between(self.orientation_mean, Z_AXIS)
+    xy_angle = np.arctan2(self.orientation_mean[1], self.orientation_mean[0])
+    return z_angle, xy_angle
   
   def merge(self, other: 'Feature') -> 'Feature':
     assert other.n == 1
     n = self.n + 1
     color = self.incremental_mean(self.color, other.color, n)
+    zang, xyang = self.incremental_mean(np.asarray(self.angles()), np.asarray(other.angles()), n)
     return Feature(
       id=self.id,
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
       n=n,
       position_mean=self.incremental_mean(self.position_mean, other.position_mean, n),
       position_deviation=self.incremental_deviation(self.position_deviation, self.position_mean, other.position_deviation, n),
-      orientation_mean=self.incremental_mean(self.orientation_mean, other.orientation_mean, n),
+      orientation_mean=normalize(np.asarray([np.cos(xyang) * np.sin(zang), np.sin(xyang) * np.sin(zang), np.cos(zang)])),
       orientation_deviation=self.incremental_deviation(self.orientation_deviation, 0.0, other.orientation_deviation, n),
       radius_mean=self.incremental_mean(self.radius_mean, other.radius_mean, n),
       radius_deviation=self.incremental_deviation(self.radius_deviation, self.radius_mean, other.radius_deviation, n),
@@ -182,8 +188,8 @@ class Feature:
   def apply_basis(self, basis: State) -> 'Feature':
     clone = deepcopy(self)
     clone.position_mean += basis.position
-    angle = angle_between(basis.forward, clone.orientation_mean)
-    axis = np.cross(clone.orientation_mean, basis.forward)
+    angle = angle_between(basis.forward, Z_AXIS)
+    axis = np.cross(Z_AXIS, basis.forward)
     clone.orientation_mean = normalize(np.dot(angle_axis(axis, angle), clone.orientation_mean))
     return clone
   
@@ -239,7 +245,7 @@ class ProcessedFeatures:
   processed: List[Tuple[Feature, Optional[Feature]]]
 
 class FeatureDatabase:
-  SIMILARITY_THRESHOLD = 0.10
+  SIMILARITY_THRESHOLD = 0.05
   # All fields except the primary key
   ALL = '''
     id, n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
@@ -293,8 +299,7 @@ class FeatureDatabase:
 
   def batch_select(self, ids: List[int]) -> List[Feature]:
     cur = self.connection.cursor()
-    for id in ids:
-      cur.execute('SELECT * FROM features WHERE id={}'.format(id))
+    cur.execute('SELECT * FROM features WHERE id in ({})'.format(','.join(['?'] * len(ids))), ids)
     rows = cur.fetchall()
     return [Feature.from_row(row) for row in rows]
 
@@ -326,7 +331,8 @@ class FeatureDatabase:
       max_probability = 0.0
       max_feature = None
       intersection = [id for id in self.index.intersection(transformed.bbox(estimate.position_deviation))]
-      for intersect in self.batch_select(intersection):
+      intersection = self.batch_select(intersection)
+      for intersect in intersection:
         probability = intersect.probability(transformed, estimate)
         if probability > max_probability:
           max_feature = intersect
@@ -334,6 +340,7 @@ class FeatureDatabase:
       if max_feature is not None:
         n += 1
         if process:
+          print("MAX = {}".format(max_probability))
           if max_probability >= FeatureDatabase.SIMILARITY_THRESHOLD:
             processed.append((transformed, max_feature))
           else:
