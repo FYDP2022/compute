@@ -34,6 +34,9 @@ class App:
   
   def run(self):
     try:
+      # test = feature_database.batch_select([6, 7])
+      # print(test[0].probability(test[1], self.state))
+      # raise RuntimeError()
       accum = 0.0
       framerate = 0.0
       n = 0

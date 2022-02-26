@@ -46,7 +46,7 @@ class Feature:
   material: Material = Material.UNDEFINED
 
   def create(kp, image, points3d, disparity) -> Optional['Feature']:
-    THRESHOLD = 0.001
+    THRESHOLD = 5
     SIZE_THRESHOLD = 3.0
     x, y = round(kp.pt[0]), round(kp.pt[1])
     window_size = math.ceil(kp.size / 2.0)
@@ -56,18 +56,19 @@ class Feature:
     n = 0.0
     depth = []
     for i in range(x - window_size, x + window_size):
-      for j in range(x - window_size, y + window_size):
-        if math.sqrt((i - x) ** 2 + (j - y) ** 2) <= window_size:
+      for j in range(y - window_size, y + window_size):
+        if i < CONFIG.width and j < CONFIG.height and math.sqrt((i - x) ** 2 + (j - y) ** 2) <= window_size:
           n += 1.0
-          color = color * (n - 1) / n + np.asarray(image[i][j]) / n
-          if disparity[i][j] > THRESHOLD:
-            depth.append(float(points3d[i][j][2] / 1000.0)) # Q matrix was computed using mm
+          print
+          color = color * (n - 1) / n + np.asarray(image[j, i]) / n
+          if disparity[j, i] > THRESHOLD:
+            depth.append(float(points3d[j, i][2] / 1000.0)) # Q matrix was computed using mm
 
     if len(depth) < 2:
       return None
 
     median_depth = statistics.median(depth)
-    radius = math.tan(math.radians(CameraParameters.FOVX / 2.0) * (kp.size / 2.0) / CONFIG.width) * median_depth
+    radius = math.tan(math.radians(CameraParameters.FOVX) * (kp.size / 2.0) / CONFIG.width) * median_depth
     v = pixel_ray(Z_AXIS, kp.pt[0], kp.pt[1])
     
     return Feature(
@@ -128,7 +129,6 @@ class Feature:
     # NOTE: we are assuming that position, radius & orientation are independent
     # Compute deviations
     dp = self.deviation(other)
-    dp += self.radius_deviation * self.radius_mean + other.radius_deviation * other.radius_mean
     delta_p = other.position_mean - self.position_mean
     r = np.linalg.norm(delta_p)
     position_probability = 1.0 if r == 0.0 else 0.0
@@ -136,9 +136,11 @@ class Feature:
       # Compute the sigma value (num deviations from mean) of difference between features (based
       # on distributions projected onto the line subtending features)
       # Marginal probability along radial vector delta_p
+      radial_deviation = self.radius_deviation * self.radius_mean + other.radius_deviation * other.radius_mean
+      boundary = self.radius_mean + radial_deviation
       # Pr(r <= self.radius_mean) written in standard normal distribution
-      upper_p = (self.radius_mean - r) / dp
-      lower_p = (-self.radius_mean - r) / dp
+      upper_p = (boundary - r) / dp
+      lower_p = (-boundary - r) / dp
       # Computes P(r is within boundaries of z) using CDF of standard normal distribution
       position_probability = st.norm.cdf(upper_p) - st.norm.cdf(lower_p)
     delta_r = abs(other.radius_mean - self.radius_mean)
@@ -154,7 +156,7 @@ class Feature:
     lower_o = -(1 / angle) / do
     orientation_probability = st.norm.cdf(upper_o) - st.norm.cdf(lower_o)
     # print("B: {}, {}, {}".format(position_probability, radius_probability, orientation_probability))
-    return position_probability * radius_probability * orientation_probability
+    return position_probability #* radius_probability * orientation_probability
   
   def angles(self) -> Tuple[float, float]:
     z_angle = angle_between(self.orientation_mean, Z_AXIS)
@@ -245,7 +247,7 @@ class ProcessedFeatures:
   processed: List[Tuple[Feature, Optional[Feature]]]
 
 class FeatureDatabase:
-  SIMILARITY_THRESHOLD = 0.05
+  SIMILARITY_THRESHOLD = 0.005
   # All fields except the primary key
   ALL = '''
     id, n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
