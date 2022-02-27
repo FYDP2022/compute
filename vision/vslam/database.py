@@ -78,7 +78,7 @@ class Feature:
       orientation_mean=math.cos(kp.angle) * X_AXIS + math.sin(kp.angle) * Y_AXIS,
       orientation_deviation=math.pi,
       radius_mean=radius,
-      radius_deviation=1.0 - kp.response
+      radius_deviation=kp.response
     )
   
   def incremental_mean(self, mean, sample, n: int) -> Any:
@@ -146,17 +146,17 @@ class Feature:
     delta_r = abs(other.radius_mean - self.radius_mean)
     radius_probability = 1.0 if delta_r == 0.0 else 0.0
     if delta_r > 0.0:
-      upper_r = (1 / delta_r) / self.radius_deviation
-      lower_r = -(1 / delta_r) / self.radius_deviation
+      upper_r = delta_r / self.radius_deviation + 1
+      lower_r = delta_r / self.radius_deviation - 1
       # Computes P(radius of yt is within 1 stddev of z) using CDF of standard normal distribution
       radius_probability = st.norm.cdf(upper_r) - st.norm.cdf(lower_r)
     angle = angle_between(self.orientation_mean, other.orientation_mean)
     do = self.orientation_deviation + other.orientation_deviation
-    upper_o = (1 / angle) / do
-    lower_o = -(1 / angle) / do
+    upper_o = angle / do + 1
+    lower_o = angle / do - 1
     orientation_probability = st.norm.cdf(upper_o) - st.norm.cdf(lower_o)
     # print("B: {}, {}, {}".format(position_probability, radius_probability, orientation_probability))
-    return position_probability #* radius_probability * orientation_probability
+    return position_probability * radius_probability * orientation_probability
   
   def angles(self) -> Tuple[float, float]:
     return spherical_angles(self.orientation_mean)
@@ -259,6 +259,7 @@ class Observe(Enum):
 class ProcessedFeatures:
   # (new_feature, correlated_feature, measurement)
   processed: List[Tuple[Feature, Optional[Feature], Optional[VisualMeasurement]]]
+  # bbox: BoundingBox compute min & max along each axis for aging process
 
 ObserveResult = Union[None, ProcessedFeatures, List[VisualMeasurement]]
 
