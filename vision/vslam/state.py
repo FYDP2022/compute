@@ -4,17 +4,19 @@ from typing import Any, List, Tuple
 from dataclasses import dataclass
 import numpy as np
 
-from vslam.utils import Position, Vector, angle_axis, normalize
+from vslam.utils import Z_AXIS, Position, Vector, angle_axis, normalize, spherical_rotation_matrix
 
 @dataclass
 class Delta:
   delta_position: Vector = np.asarray((0.0, 0.0, 0.0))
-  delta_orientation: Vector = np.asarray((0.0, 0.0, 0.0))
+  delta_theta: float = 0.0
+  delta_phi: float = 0.0
   
   def negate(self) -> 'Delta':
     return Delta(
       -self.delta_position,
-      -self.delta_orientation
+      -self.delta_theta,
+      -self.delta_phi
     )
   
 @dataclass
@@ -26,10 +28,11 @@ class State:
   orientation_deviation: float = 0.0
   
   def apply_delta(self, delta: Delta) -> 'State':
+    rotation = spherical_rotation_matrix(delta.delta_theta, delta.delta_phi)
     return State(
       position=self.position + delta.delta_position,
-      forward=normalize(self.forward + delta.delta_orientation),
-      up=normalize(self.up + delta.delta_orientation),
+      forward=normalize(np.dot(rotation, self.forward)),
+      up=normalize(np.dot(rotation, self.up)),
       position_deviation=self.position_deviation,
       orientation_deviation=self.orientation_deviation
     )

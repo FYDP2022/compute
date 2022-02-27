@@ -72,3 +72,22 @@ def find_orthogonal_axes(v: np.array) -> Tuple[np.array, np.array]:
   x /= np.linalg.norm(x)
   y = np.cross(v, x)
   return x, y
+
+def spherical_angles(v: np.array) -> Tuple[float, float]:
+  """Returns (theta, phi)."""
+  # Z-angle
+  phi = angle_between(v, Z_AXIS)
+  # XY-angle
+  theta = np.arctan2(v[1], v[0])
+  return theta, phi
+
+def spherical_coordinates(theta: float, phi: float) -> np.array:
+  return np.asarray([np.cos(theta) * np.sin(phi), np.sin(theta) * np.sin(phi), np.cos(phi)])
+
+def spherical_rotation_matrix(theta: float, phi: float) -> np.ndarray:
+  v = spherical_coordinates(theta, phi)
+  z_rot_axis = np.cross(Z_AXIS, v)
+  return np.dot(angle_axis(z_rot_axis, phi), angle_axis(Z_AXIS, theta))
+
+def spherical_angles_from_reference(axis1, axis2):
+  pass

@@ -7,7 +7,7 @@ from vslam.slam import SLAM
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
 from vslam.parameters import CalibrationParameters
-from vslam.database import Feature, feature_database
+from vslam.database import Feature, Observe, feature_database
 from vslam.config import CONFIG, DebugWindows
 from vslam.depth import DepthEstimator
 from vslam.camera import StereoCamera
@@ -65,7 +65,7 @@ class App:
         vision_delta, probability = self.slam.step(estimate, ControlState(), features)
         estimate = estimate.apply_delta(vision_delta)
         # TODO: add variance term computed from dynamics & sensor calculation -> use SGD error to compute sigma
-        processed, probability = feature_database.observe(estimate, features)
+        processed, probability = feature_database.observe(estimate, features, Observe.PROCESSED)
         feature_database.apply_features(processed)
         self.state = estimate
         print(self.state)
