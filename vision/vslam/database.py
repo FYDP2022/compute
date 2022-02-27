@@ -1,4 +1,5 @@
 from copy import deepcopy
+from enum import Enum, unique
 import json
 import math
 import os
@@ -7,12 +8,12 @@ from rtree import index
 import sqlite3
 import statistics
 import scipy.stats as st
-from typing import Any, Generator, List, Optional, Tuple
+from typing import Any, Generator, List, Optional, Tuple, Union
 from dataclasses import dataclass
 import numpy as np
 
 from vslam.parameters import CameraParameters
-from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection
+from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection, spherical_angles, spherical_coordinates, spherical_rotation_matrix
 from vslam.config import CONFIG
 from vslam.segmentation import Material
 from vslam.state import Delta, State
@@ -59,7 +60,6 @@ class Feature:
       for j in range(y - window_size, y + window_size):
         if i < CONFIG.width and j < CONFIG.height and math.sqrt((i - x) ** 2 + (j - y) ** 2) <= window_size:
           n += 1.0
-          print
           color = color * (n - 1) / n + np.asarray(image[j, i]) / n
           if disparity[j, i] > THRESHOLD:
             depth.append(float(points3d[j, i][2] / 1000.0)) # Q matrix was computed using mm
@@ -159,22 +159,20 @@ class Feature:
     return position_probability #* radius_probability * orientation_probability
   
   def angles(self) -> Tuple[float, float]:
-    z_angle = angle_between(self.orientation_mean, Z_AXIS)
-    xy_angle = np.arctan2(self.orientation_mean[1], self.orientation_mean[0])
-    return z_angle, xy_angle
+    return spherical_angles(self.orientation_mean)
   
   def merge(self, other: 'Feature') -> 'Feature':
     assert other.n == 1
     n = self.n + 1
     color = self.incremental_mean(self.color, other.color, n)
-    zang, xyang = self.incremental_mean(np.asarray(self.angles()), np.asarray(other.angles()), n)
+    theta, phi = self.incremental_mean(np.asarray(self.angles()), np.asarray(other.angles()), n)
     return Feature(
       id=self.id,
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
       n=n,
       position_mean=self.incremental_mean(self.position_mean, other.position_mean, n),
       position_deviation=self.incremental_deviation(self.position_deviation, self.position_mean, other.position_deviation, n),
-      orientation_mean=normalize(np.asarray([np.cos(xyang) * np.sin(zang), np.sin(xyang) * np.sin(zang), np.cos(zang)])),
+      orientation_mean=spherical_coordinates(theta, phi),
       orientation_deviation=self.incremental_deviation(self.orientation_deviation, 0.0, other.orientation_deviation, n),
       radius_mean=self.incremental_mean(self.radius_mean, other.radius_mean, n),
       radius_deviation=self.incremental_deviation(self.radius_deviation, self.radius_mean, other.radius_deviation, n),
@@ -195,12 +193,21 @@ class Feature:
     clone.orientation_mean = normalize(np.dot(angle_axis(axis, angle), clone.orientation_mean))
     return clone
   
+  def delta(self, other: 'Feature') -> Delta:
+    t1, p1 = self.angles()
+    t2, p2 = other.angles()
+    return Delta(
+      other.position_mean - self.position_mean,
+      t2 - t1,
+      p2 - p1
+    )
+  
   def adjust(self, delta: Delta):
     self.position_mean += delta.delta_position
-    self.orientation_mean += delta.delta_orientation
+    self.orientation_mean = normalize(np.dot(spherical_rotation_matrix(delta.delta_theta, delta.delta_phi), self.orientation_mean))
   
   def bbox(self, deviation: float) -> BoundingBox:
-    radius = self.radius_mean + self.radius_deviation + deviation
+    radius = self.radius_mean * self.radius_deviation + deviation
     return (
       self.position_mean[0] - radius, self.position_mean[0] + radius,
       self.position_mean[1] - radius, self.position_mean[1] + radius,
@@ -242,9 +249,18 @@ class SpatialIndex:
   def intersection(self, box: BoundingBox) -> Generator[int, None, None]:
     return self.rtree.intersection(box)
 
+@unique
+class Observe(Enum):
+  PROBABILITY = 0
+  VISUAL_MEASUREMENT = 1
+  PROCESSED = 2
+
 @dataclass
 class ProcessedFeatures:
-  processed: List[Tuple[Feature, Optional[Feature]]]
+  # (new_feature, correlated_feature, measurement)
+  processed: List[Tuple[Feature, Optional[Feature], Optional[VisualMeasurement]]]
+
+ObserveResult = Union[None, ProcessedFeatures, List[VisualMeasurement]]
 
 class FeatureDatabase:
   SIMILARITY_THRESHOLD = 0.005
@@ -324,8 +340,12 @@ class FeatureDatabase:
     # * Find a feature with similar properties to current feature than guess the estimate as the exact delta to this feature
     pass
 
-  def observe(self, estimate: State, frame: List[Feature], process = True) -> Tuple[ProcessedFeatures, float]:
-    processed = []
+  def observe(self, estimate: State, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
+    result = None
+    if what is Observe.PROCESSED:
+      result = ProcessedFeatures([])
+    elif what is Observe.VISUAL_MEASUREMENT:
+      result = []
     probability_accum = 0.0
     n = 0
     for feature in frame:
@@ -341,24 +361,27 @@ class FeatureDatabase:
           max_probability = probability
       if max_feature is not None:
         n += 1
-        if process:
-          print("MAX = {}".format(max_probability))
-          if max_probability >= FeatureDatabase.SIMILARITY_THRESHOLD:
-            processed.append((transformed, max_feature))
-          else:
-            processed.append((transformed, None))
+        if what is not Observe.PROBABILITY:
+          measurement = VisualMeasurement(transformed, max_feature.delta(transformed), max_probability)
+          if what is Observe.PROCESSED:
+            if max_probability >= FeatureDatabase.SIMILARITY_THRESHOLD:
+              result.processed.append((transformed, max_feature, measurement))
+            else:
+              result.processed.append((transformed, None, measurement))
+          elif what is Observe.VISUAL_MEASUREMENT:
+            result.append(measurement)
         probability_accum += max_probability
-      elif process:
-        processed.append((transformed, None))
+      elif what is Observe.PROCESSED:
+        result.processed.append((transformed, None, None))
 
     if n == 0:
-      return ProcessedFeatures(processed), 0.0
+      return result, 0.0
     else:
-      return ProcessedFeatures(processed), probability_accum / float(n)
+      return result, probability_accum / float(n)
   
   def apply_features(self, processed: ProcessedFeatures):
     add = []
-    for feature, source in processed.processed:
+    for feature, source, _ in processed.processed:
       if source is not None:
         self.index.delete(source.id, source.bbox(0.0))
         merged = source.merge(feature)
