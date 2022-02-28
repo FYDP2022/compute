@@ -1,3 +1,4 @@
+from cmath import isinf
 from copy import deepcopy
 from enum import Enum, unique
 import json
@@ -61,7 +62,7 @@ class Feature:
         if i < CONFIG.width and j < CONFIG.height and math.sqrt((i - x) ** 2 + (j - y) ** 2) <= window_size:
           n += 1.0
           color = color * (n - 1) / n + np.asarray(image[j, i]) / n
-          if disparity[j, i] > THRESHOLD:
+          if disparity[j, i] > THRESHOLD and not isinf(disparity[j, i]):
             depth.append(float(points3d[j, i][2] / 1000.0)) # Q matrix was computed using mm
 
     if len(depth) < 2:
@@ -70,11 +71,12 @@ class Feature:
     median_depth = statistics.median(depth)
     radius = math.tan(math.radians(CameraParameters.FOVX) * (kp.size / 2.0) / CONFIG.width) * median_depth
     v = pixel_ray(Z_AXIS, kp.pt[0], kp.pt[1])
+    deviation = statistics.stdev(depth)
     
     return Feature(
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
       position_mean=v * median_depth,
-      position_deviation=statistics.stdev(depth) * v,
+      position_deviation=deviation * v,
       orientation_mean=math.cos(kp.angle) * X_AXIS + math.sin(kp.angle) * Y_AXIS,
       orientation_deviation=math.pi,
       radius_mean=radius,
