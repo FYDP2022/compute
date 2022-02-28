@@ -198,7 +198,7 @@ class Feature:
     # F(x, y, z, p) and apply rotation in world coordinates
     clone = deepcopy(self)
     angle = angle_between(basis.forward, Z_AXIS)
-    axis = np.cross(Z_AXIS, basis.forward)
+    axis = np.cross(basis.forward, Z_AXIS)
     rotation = angle_axis(axis, angle)
     clone.position_mean = np.dot(rotation, self.position_mean) + basis.position
     clone.orientation_mean = normalize(np.dot(rotation, clone.orientation_mean))
@@ -278,7 +278,7 @@ class ProcessedFeatures:
 ObserveResult = Union[None, ProcessedFeatures, List[VisualMeasurement]]
 
 class FeatureDatabase:
-  SIMILARITY_THRESHOLD = 0.0
+  SIMILARITY_THRESHOLD = 0.15
   # All fields except the primary key
   ALL = '''
     id, n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
