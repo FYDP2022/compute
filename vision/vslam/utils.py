@@ -84,12 +84,12 @@ def spherical_angles(v: np.array) -> Tuple[float, float]:
   phi = angle_between(v, Z_AXIS)
   # XY-angle
   theta = np.arctan2(v[1], v[0])
-  return theta, phi
+  return theta % (2 * math.pi), phi % (2 * math.pi)
 
 def spherical_coordinates(theta: float, phi: float) -> np.array:
   return np.asarray([np.cos(theta) * np.sin(phi), np.sin(theta) * np.sin(phi), np.cos(phi)])
 
 def spherical_rotation_matrix(theta: float, phi: float) -> np.ndarray:
   v = spherical_coordinates(theta, phi)
-  z_rot_axis = np.cross(Z_AXIS, v)
+  z_rot_axis = np.cross(v, Z_AXIS)
   return np.dot(angle_axis(z_rot_axis, phi), angle_axis(Z_AXIS, theta))

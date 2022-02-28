@@ -27,7 +27,7 @@ class App:
     self.semantic = SemanticSegmentationModel()
     self.dynamics = DynamicsModel()
     self.slam = GradientAscentSLAM()
-    self.state = State()
+    self.state = State(forward=np.asarray([1.0, 0.0, 0.0]))
     self.keypoint = cv.SIFT_create()
     if DebugWindows.KEYPOINT in CONFIG.windows:
       cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
