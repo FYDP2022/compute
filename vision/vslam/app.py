@@ -2,7 +2,7 @@ import os
 import traceback
 import cv2 as cv
 from datetime import datetime
-from vslam.slam import SLAM
+from vslam.slam import SoftmaxSLAM
 
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
@@ -22,7 +22,7 @@ class App:
     self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
     self.semantic = SemanticSegmentationModel()
     self.dynamics = DynamicsModel()
-    self.slam = SLAM()
+    self.slam = SoftmaxSLAM()
     self.state = State()
     self.keypoint = cv.SIFT_create()
     if DebugWindows.KEYPOINT in CONFIG.windows:
