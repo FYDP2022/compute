@@ -37,15 +37,17 @@ class GradientAscentSLAM(SLAM):
     RESOLUTION_POSITION = 0.01 # 1cm
     RESOLUTION_ANGLE = math.radians(1) # 1 degree
     MAX_ITERATIONS = 5
-    SAMPLES = 30
+    SAMPLES = 1000
     DECAY = float(MAX_ITERATIONS - 1) / float(MAX_ITERATIONS)
     PROBABILITY_THRESHOLD = 0.95
     LR = 0.01
 
+    samples = min(SAMPLES, len(frame))
+
     # Apply Gradient Ascent on visual measurement probability by computing derivatives
     # using the fundamental theorem of calculus
     delta = Delta()
-    _, last_probability = feature_database.observe(estimate, np.random.choice(frame, SAMPLES))
+    _, last_probability = feature_database.observe(estimate, np.random.choice(frame, samples, False))
     print(last_probability)
     if last_probability == 0.0:
       return delta, 0.0
@@ -57,7 +59,7 @@ class GradientAscentSLAM(SLAM):
       for axis in GradientAscentSLAM.BASIS:
         positive = estimate.apply_delta(Delta(delta.delta_position + axis * RESOLUTION_POSITION, delta.delta_theta, delta.delta_phi))
         positive.position_deviation += RESOLUTION_POSITION
-        _, p_upper = feature_database.observe(positive, np.random.choice(frame, SAMPLES))
+        _, p_upper = feature_database.observe(positive, np.random.choice(frame, samples, False))
         p_lower = last_probability
         position_gradient.append((p_upper - p_lower) / RESOLUTION_POSITION)
       orientation_gradient = []
@@ -65,7 +67,7 @@ class GradientAscentSLAM(SLAM):
       for axis in rotation_axes:
         positive = estimate.apply_delta(delta)
         positive.rotate(RESOLUTION_ANGLE, axis)
-        _, p_upper = feature_database.observe(positive, np.random.choice(frame, SAMPLES))
+        _, p_upper = feature_database.observe(positive, np.random.choice(frame, samples, False))
         p_lower = last_probability
         orientation_gradient.append((p_upper - p_lower) / RESOLUTION_ANGLE)
       next = Delta()
@@ -77,7 +79,7 @@ class GradientAscentSLAM(SLAM):
       t2, p2 = spherical_angles(orientation)
       next.delta_theta = t2 - t1
       next.delta_phi = p2 - p1
-      _, probability = feature_database.observe(estimate.apply_delta(next), np.random.choice(frame, SAMPLES))
+      _, probability = feature_database.observe(estimate.apply_delta(next), np.random.choice(frame, samples, False))
       # if probability <= last_probability:
       #   break
       lr *= DECAY
