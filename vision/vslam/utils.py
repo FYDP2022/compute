@@ -88,6 +88,3 @@ def spherical_rotation_matrix(theta: float, phi: float) -> np.ndarray:
   v = spherical_coordinates(theta, phi)
   z_rot_axis = np.cross(Z_AXIS, v)
   return np.dot(angle_axis(z_rot_axis, phi), angle_axis(Z_AXIS, theta))
-
-def spherical_angles_from_reference(axis1, axis2):
-  pass

@@ -186,11 +186,17 @@ class Feature:
     )
   
   def apply_basis(self, basis: State) -> 'Feature':
+    # Apply affine transformation to feature from frame F(x, y, z, O) to
+    # F(x, y, z, p) and apply rotation in world coordinates
     clone = deepcopy(self)
     clone.position_mean += basis.position
     angle = angle_between(basis.forward, Z_AXIS)
     axis = np.cross(Z_AXIS, basis.forward)
-    clone.orientation_mean = normalize(np.dot(angle_axis(axis, angle), clone.orientation_mean))
+    rotation = angle_axis(axis, angle)
+    clone.orientation_mean = normalize(np.dot(rotation, clone.orientation_mean))
+    p2 = np.dot(rotation, clone.position_deviation + self.position_mean)
+    p1 = np.dot(rotation, self.position_mean)
+    clone.position_deviation = p2 - p1
     return clone
   
   def delta(self, other: 'Feature') -> Delta:
