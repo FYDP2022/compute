@@ -73,6 +73,11 @@ def find_orthogonal_axes(v: np.array) -> Tuple[np.array, np.array]:
   y = np.cross(v, x)
   return x, y
 
+def random_basis() -> Tuple[np.array, np.array, np.array]:
+  a1 = normalize(np.random.randn(3))
+  a2, a3 = find_orthogonal_axes(a1)
+  return a1, a2, a3
+
 def spherical_angles(v: np.array) -> Tuple[float, float]:
   """Returns (theta, phi)."""
   # Z-angle

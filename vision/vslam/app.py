@@ -1,8 +1,11 @@
+import math
 import os
 import traceback
 import cv2 as cv
 from datetime import datetime
-from vslam.slam import SoftmaxSLAM
+
+import numpy as np
+from vslam.slam import GradientAscentSLAM, SoftmaxSLAM
 
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
@@ -12,6 +15,7 @@ from vslam.config import CONFIG, DebugWindows
 from vslam.depth import DepthEstimator
 from vslam.camera import StereoCamera
 from vslam.state import ControlState, State
+from vslam.utils import normalize, spherical_rotation_matrix
 
 class App:
   KEYPOINT_WINDOW_NAME = 'KEYPOINT'
@@ -22,7 +26,7 @@ class App:
     self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
     self.semantic = SemanticSegmentationModel()
     self.dynamics = DynamicsModel()
-    self.slam = SoftmaxSLAM()
+    self.slam = GradientAscentSLAM()
     self.state = State()
     self.keypoint = cv.SIFT_create()
     if DebugWindows.KEYPOINT in CONFIG.windows:
@@ -53,7 +57,7 @@ class App:
         grayL = cv.cvtColor(left, cv.COLOR_BGR2GRAY)
         grayR = cv.cvtColor(right, cv.COLOR_BGR2GRAY)
         disparity = self.depth.process(grayL, grayR)
-        dynamics_delta = self.dynamics.step(self.state, ControlState())
+        dynamics_delta, dynamics_deviation = self.dynamics.step(self.state, ControlState())
         estimate = self.state.apply_delta(dynamics_delta)
         kp = self.keypoint.detect(grayL)
         if DebugWindows.KEYPOINT in CONFIG.windows:
@@ -62,8 +66,9 @@ class App:
         points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
         features = [Feature.create(k, left, points3d, disparity) for k in kp]
         features = [f for f in features if f]
-        vision_delta, probability = self.slam.step(estimate, ControlState(), features)
+        vision_delta, probability, deviation = self.slam.step(estimate, ControlState(), features)
         estimate = estimate.apply_delta(vision_delta)
+        estimate = estimate.apply_deviation(deviation)
         # TODO: add variance term computed from dynamics & sensor calculation -> use SGD error to compute sigma
         processed, probability = feature_database.observe(estimate, features, Observe.PROCESSED)
         feature_database.apply_features(processed)

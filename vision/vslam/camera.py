@@ -50,8 +50,8 @@ class StereoCamera:
 
   def close(self):
     self.stopped = True
-    self.t1.join()
-    self.t2.join()
+    self.t1.join(5)
+    self.t2.join(5)
     self.capture[CameraIndex.LEFT].release()
     self.capture[CameraIndex.RIGHT].release()
 
@@ -62,7 +62,7 @@ class StereoCamera:
   def _reader(self, camera: CameraIndex):
     while not self.stopped:
       ret, frame = self.capture[camera].read()
-      self.barrier.wait(5)
+      self.barrier.wait()
       if not ret:
         raise RuntimeError('failed to read camera sensor: {}'.format(camera))
       if not self.queue[camera].empty():
@@ -73,7 +73,7 @@ class StereoCamera:
           pass
       self.queue[camera].put(frame)
     if self.barrier.n_waiting > 0:
-      self.barrier.wait(5)
+      self.barrier.reset()
   
   def _cameraString(self, camera: CameraIndex) -> str:
     return """

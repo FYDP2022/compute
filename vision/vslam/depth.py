@@ -71,5 +71,6 @@ class DepthEstimator:
 
     # disparity = (CameraParameters.BASELINE * CameraParameters.FOCAL_LENGTH) / disparity
     disparity = disparity.astype(np.float32) / 16.0
+    disparity = cv.GaussianBlur(disparity, (5, 5), 2.5)
 
     return disparity
