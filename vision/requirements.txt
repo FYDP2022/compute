@@ -1,0 +1,6 @@
+scikit-build
+opencv-contrib-python
+dataclasses
+Rtree
+Cython
+scipy
