@@ -153,3 +153,5 @@ cython_debug/
 
 calibration/
 !data/calibration/
+com/**/*
+!com/.gitkeep
