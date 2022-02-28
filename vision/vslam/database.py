@@ -145,7 +145,7 @@ class Feature:
       # on distributions projected onto the line subtending features)
       # Marginal probability along radial vector delta_p
       radial_deviation = (1 + self.radius_deviation) * self.radius_mean + (1 + other.radius_deviation) * other.radius_mean
-      boundary = self.radius_mean + radial_deviation
+      boundary = radial_deviation
       # Pr(r <= self.radius_mean) written in standard normal distribution
       upper_p = (boundary - r) / dp
       lower_p = (-boundary - r) / dp
@@ -157,14 +157,14 @@ class Feature:
       upper_r = delta_r / self.radius_deviation + 1
       lower_r = delta_r / self.radius_deviation - 1
       # Computes P(radius of yt is within 1 stddev of z) using CDF of standard normal distribution
-      radius_probability = st.norm.cdf(upper_r) - st.norm.cdf(lower_r)
+      radius_probability = (st.norm.cdf(upper_r) - st.norm.cdf(lower_r)) / 0.68
     angle = angle_between(self.orientation_mean, other.orientation_mean)
     do = self.orientation_deviation + other.orientation_deviation
     upper_o = angle / do + 1
     lower_o = angle / do - 1
-    orientation_probability = st.norm.cdf(upper_o) - st.norm.cdf(lower_o)
+    orientation_probability = (st.norm.cdf(upper_o) - st.norm.cdf(lower_o)) / 0.68
     # print("B: {}, {}, {}".format(position_probability, radius_probability, orientation_probability))
-    return position_probability # * radius_probability * orientation_probability
+    return position_probability * radius_probability * orientation_probability
   
   def angles(self) -> Tuple[float, float]:
     return spherical_angles(self.orientation_mean)
@@ -173,15 +173,14 @@ class Feature:
     assert other.n == 1
     n = self.n + 1
     color = self.incremental_mean(self.color, other.color, n)
-    theta, phi = self.incremental_mean(np.asarray(self.angles()), np.asarray(other.angles()), n)
     return Feature(
       id=self.id,
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
       n=n,
       position_mean=self.expectation(self.position_mean, other.position_mean, probability, n),
       position_deviation=self.incremental_deviation(self.position_deviation, self.position_mean, other.position_deviation, n),
-      orientation_mean=spherical_coordinates(theta, phi),
-      orientation_deviation=self.incremental_deviation(self.orientation_deviation, 0.0, other.orientation_deviation, n),
+      orientation_mean=self.incremental_mean(self.orientation_mean, other.orientation_mean, n),
+      orientation_deviation=normalize(self.incremental_deviation(self.orientation_deviation, 0.0, other.orientation_deviation, n)),
       radius_mean=self.incremental_mean(self.radius_mean, other.radius_mean, n),
       radius_deviation=self.incremental_deviation(self.radius_deviation, self.radius_mean, other.radius_deviation, n),
       material=self.material
@@ -208,17 +207,10 @@ class Feature:
     return clone
   
   def delta(self, other: 'Feature') -> Delta:
-    t1, p1 = self.angles()
-    t2, p2 = other.angles()
     return Delta(
       other.position_mean - self.position_mean,
-      t2 - t1,
-      p2 - p1
+      other.orientation_mean - self.orientation_mean
     )
-  
-  def adjust(self, delta: Delta):
-    self.position_mean += delta.delta_position
-    self.orientation_mean = normalize(np.dot(spherical_rotation_matrix(delta.delta_theta, delta.delta_phi), self.orientation_mean))
   
   def bbox(self, deviation: float) -> BoundingBox:
     radius = self.radius_mean * (1 + self.radius_deviation) + deviation
