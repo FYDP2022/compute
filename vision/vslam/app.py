@@ -1,12 +1,9 @@
-import math
 import os
 import traceback
 import cv2 as cv
 from datetime import datetime
 
-import numpy as np
-from vslam.slam import GradientAscentSLAM, SoftmaxSLAM
-
+from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
 from vslam.parameters import CalibrationParameters
@@ -27,7 +24,7 @@ class App:
     self.semantic = SemanticSegmentationModel()
     self.dynamics = DynamicsModel()
     self.slam = GradientAscentSLAM()
-    self.state = State(forward=np.asarray([1.0, 0.0, 0.0]))
+    self.state = State()
     self.keypoint = cv.SIFT_create()
     if DebugWindows.KEYPOINT in CONFIG.windows:
       cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
