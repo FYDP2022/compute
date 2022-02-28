@@ -138,7 +138,7 @@ class Feature:
       # Compute the sigma value (num deviations from mean) of difference between features (based
       # on distributions projected onto the line subtending features)
       # Marginal probability along radial vector delta_p
-      radial_deviation = self.radius_deviation * self.radius_mean + other.radius_deviation * other.radius_mean
+      radial_deviation = (1 + self.radius_deviation) * self.radius_mean + (1 + other.radius_deviation) * other.radius_mean
       boundary = self.radius_mean + radial_deviation
       # Pr(r <= self.radius_mean) written in standard normal distribution
       upper_p = (boundary - r) / dp
@@ -215,7 +215,7 @@ class Feature:
     self.orientation_mean = normalize(np.dot(spherical_rotation_matrix(delta.delta_theta, delta.delta_phi), self.orientation_mean))
   
   def bbox(self, deviation: float) -> BoundingBox:
-    radius = self.radius_mean * self.radius_deviation + deviation
+    radius = self.radius_mean * (1 + self.radius_deviation) + deviation
     return (
       self.position_mean[0] - radius, self.position_mean[0] + radius,
       self.position_mean[1] - radius, self.position_mean[1] + radius,
@@ -272,7 +272,7 @@ class ProcessedFeatures:
 ObserveResult = Union[None, ProcessedFeatures, List[VisualMeasurement]]
 
 class FeatureDatabase:
-  SIMILARITY_THRESHOLD = 0.005
+  SIMILARITY_THRESHOLD = 0.15
   # All fields except the primary key
   ALL = '''
     id, n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
@@ -365,6 +365,7 @@ class FeatureDatabase:
       intersection = self.batch_select(intersection)
       for intersect in intersection:
         probability = intersect.probability(transformed, estimate)
+        # print(probability)
         if probability > max_probability:
           max_feature = intersect
           max_probability = probability
