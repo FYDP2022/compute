@@ -70,5 +70,6 @@ class DepthEstimator:
       cv.imshow(DepthEstimator.DEPTH_WINDOW_NAME, display)
 
     # disparity = (CameraParameters.BASELINE * CameraParameters.FOCAL_LENGTH) / disparity
+    disparity = disparity.astype(np.float32) / 16.0
 
     return disparity

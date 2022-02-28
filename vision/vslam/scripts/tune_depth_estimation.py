@@ -1,12 +1,15 @@
 # SOURCE: https://learnopencv.com/depth-perception-using-stereo-camera-python-c/
 
+import os
 import numpy as np 
 import cv2
 
 import vslam
+from vslam.config import CONFIG
+from vslam.parameters import CalibrationParameters
 
 stereo_cam = vslam.camera.StereoCamera(960, 540)
-depth_estimator = vslam.depth.DepthEstimator(960, 540)
+depth_estimator = vslam.depth.DepthEstimator(960, 540, CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration')))
 
 def nothing(x):
     pass
