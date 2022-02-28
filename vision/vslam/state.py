@@ -1,14 +1,14 @@
 from enum import Enum
 import math
 from typing import Any, List, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 
 from vslam.utils import Z_AXIS, Position, Vector, angle_axis, normalize, spherical_rotation_matrix
 
 @dataclass
 class Delta:
-  delta_position: Vector = np.asarray((0.0, 0.0, 0.0))
+  delta_position: Vector = field(default_factory=lambda: np.asarray([0.0, 0.0, 0.0]))
   delta_theta: float = 0.0
   delta_phi: float = 0.0
   
@@ -18,12 +18,18 @@ class Delta:
       -self.delta_theta,
       -self.delta_phi
     )
+
+@dataclass
+class Deviation:
+  position_deviation: float = 0.0
+  theta_deviation: float = 0.0
+  phi_deviation: float = 0.0
   
 @dataclass
 class State:
-  position: Position = np.asarray((0.0, 0.0, 0.0))
-  forward: Vector = np.asarray((0.0, 0.0, 1.0))
-  up: Vector = np.asarray((0.0, 1.0, 0.0))
+  position: Position = field(default_factory=lambda: np.asarray((0.0, 0.0, 0.0)))
+  forward: Vector = field(default_factory=lambda: np.asarray((0.0, 0.0, 1.0)))
+  up: Vector = field(default_factory=lambda: np.asarray((0.0, 1.0, 0.0)))
   position_deviation: float = 0.0
   orientation_deviation: float = 0.0
   
@@ -36,6 +42,11 @@ class State:
       position_deviation=self.position_deviation,
       orientation_deviation=self.orientation_deviation
     )
+  
+  def apply_deviation(self, deviation: Deviation) -> 'State':
+    self.position_deviation += deviation.position_deviation
+    self.orientation_deviation += max(deviation.theta_deviation, deviation.phi_deviation)
+    return self
   
   def rotate(self, angle: float, axis: np.array):
     mat = angle_axis(axis, angle)

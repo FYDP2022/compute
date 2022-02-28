@@ -1,3 +1,4 @@
+from typing import Tuple
 from vslam.state import ControlState, Delta, State
 
 class DynamicsModel:
@@ -9,5 +10,5 @@ class DynamicsModel:
   def __init__(self) -> 'DynamicsModel':
     pass
 
-  def step(self, estimate: State, action: ControlState) -> Delta:
-    return Delta()
+  def step(self, estimate: State, action: ControlState) -> Tuple[Delta, float]:
+    return Delta(), 0.0

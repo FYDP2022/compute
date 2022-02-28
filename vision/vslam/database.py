@@ -10,7 +10,7 @@ import sqlite3
 import statistics
 import scipy.stats as st
 from typing import Any, Generator, List, Optional, Tuple, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 
 from vslam.parameters import CameraParameters
@@ -38,10 +38,10 @@ class Feature:
   id: int = 0
   n: int = 1
   age: int = 0
-  color: Color = np.asarray((0, 0, 0))
-  position_mean: Position = np.asarray((0.0, 0.0, 0.0))
-  position_deviation: Vector = (math.inf, math.inf, math.inf)
-  orientation_mean: Vector = np.asarray((0.0, 0.0, 1.0))
+  color: Color = field(default_factory=lambda: np.asarray((0, 0, 0)))
+  position_mean: Position = field(default_factory=lambda: np.asarray((0.0, 0.0, 0.0)))
+  position_deviation: Vector = field(default_factory=lambda: np.asarray((math.inf, math.inf, math.inf)))
+  orientation_mean: Vector = field(default_factory=lambda: np.asarray((0.0, 0.0, 1.0)))
   orientation_deviation: float = math.inf
   radius_mean: float = 0.0
   radius_deviation: float = 0.0
@@ -49,7 +49,8 @@ class Feature:
 
   def create(kp, image, points3d, disparity) -> Optional['Feature']:
     THRESHOLD = 5
-    SIZE_THRESHOLD = 3.0
+    SIZE_THRESHOLD = 4.0 # 4pixel diameter
+    RADIUS_THRESHOLD = 0.05 # 5cm
     x, y = round(kp.pt[0]), round(kp.pt[1])
     window_size = math.ceil(kp.size / 2.0)
     if kp.size < SIZE_THRESHOLD:
@@ -70,15 +71,17 @@ class Feature:
 
     median_depth = statistics.median(depth)
     radius = math.tan(math.radians(CameraParameters.FOVX) * (kp.size / 2.0) / CONFIG.width) * median_depth
+    if radius < RADIUS_THRESHOLD:
+      return None
     v = pixel_ray(Z_AXIS, kp.pt[0], kp.pt[1])
-    deviation = statistics.stdev(depth)
+    deviation = statistics.stdev(depth) + radius
     
     return Feature(
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
       position_mean=v * median_depth,
-      position_deviation=deviation * v,
+      position_deviation=np.abs(deviation * v) + (radius / 4) * np.asarray([1.0, 1.0, 1.0]), # Maybe basis should be exact here
       orientation_mean=math.cos(kp.angle) * X_AXIS + math.sin(kp.angle) * Y_AXIS,
-      orientation_deviation=math.pi,
+      orientation_deviation=math.pi / 2,
       radius_mean=radius,
       radius_deviation=kp.response
     )
@@ -88,6 +91,9 @@ class Feature:
     Merge two means incrementally (self has n - 1 samples other has 1 sample).
     """
     return mean * float(n - 1) / n + sample / float(n)
+  
+  def expectation(self, last, sample, pr: float, n: int) -> Any:
+    return ((n - pr) * last + pr * sample) / n
 
   def incremental_deviation(self, deviation, mean, sample, n: int) -> Any:
     """
@@ -158,12 +164,12 @@ class Feature:
     lower_o = angle / do - 1
     orientation_probability = st.norm.cdf(upper_o) - st.norm.cdf(lower_o)
     # print("B: {}, {}, {}".format(position_probability, radius_probability, orientation_probability))
-    return position_probability * radius_probability * orientation_probability
+    return position_probability # * radius_probability * orientation_probability
   
   def angles(self) -> Tuple[float, float]:
     return spherical_angles(self.orientation_mean)
   
-  def merge(self, other: 'Feature') -> 'Feature':
+  def merge(self, other: 'Feature', probability: float) -> 'Feature':
     assert other.n == 1
     n = self.n + 1
     color = self.incremental_mean(self.color, other.color, n)
@@ -172,7 +178,7 @@ class Feature:
       id=self.id,
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
       n=n,
-      position_mean=self.incremental_mean(self.position_mean, other.position_mean, n),
+      position_mean=self.expectation(self.position_mean, other.position_mean, probability, n),
       position_deviation=self.incremental_deviation(self.position_deviation, self.position_mean, other.position_deviation, n),
       orientation_mean=spherical_coordinates(theta, phi),
       orientation_deviation=self.incremental_deviation(self.orientation_deviation, 0.0, other.orientation_deviation, n),
@@ -191,10 +197,10 @@ class Feature:
     # Apply affine transformation to feature from frame F(x, y, z, O) to
     # F(x, y, z, p) and apply rotation in world coordinates
     clone = deepcopy(self)
-    clone.position_mean += basis.position
     angle = angle_between(basis.forward, Z_AXIS)
     axis = np.cross(Z_AXIS, basis.forward)
     rotation = angle_axis(axis, angle)
+    clone.position_mean = np.dot(rotation, self.position_mean) + basis.position
     clone.orientation_mean = normalize(np.dot(rotation, clone.orientation_mean))
     p2 = np.dot(rotation, clone.position_deviation + self.position_mean)
     p1 = np.dot(rotation, self.position_mean)
@@ -272,7 +278,7 @@ class ProcessedFeatures:
 ObserveResult = Union[None, ProcessedFeatures, List[VisualMeasurement]]
 
 class FeatureDatabase:
-  SIMILARITY_THRESHOLD = 0.15
+  SIMILARITY_THRESHOLD = 0.0
   # All fields except the primary key
   ALL = '''
     id, n, age, color_r, color_g, color_b, position_mean_x, position_mean_y, position_mean_z, position_deviation_x,
@@ -391,10 +397,10 @@ class FeatureDatabase:
   
   def apply_features(self, processed: ProcessedFeatures):
     add = []
-    for feature, source, _ in processed.processed:
+    for feature, source, measurement in processed.processed:
       if source is not None:
         self.index.delete(source.id, source.bbox(0.0))
-        merged = source.merge(feature)
+        merged = source.merge(feature, measurement.importance_weight)
         add.append(merged)
       else:
         add.append(feature)
