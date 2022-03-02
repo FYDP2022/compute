@@ -454,6 +454,7 @@ class OccupancyDatabase:
   def apply_voxels(self, image: Any, points3d: Any, disparity, state: State):
     THRESHOLD = 5
     SAMPLES = 1000
+    cur = self.connection.cursor()
     angle = angle_between(state.forward, Z_AXIS)
     axis = np.cross(state.forward, Z_AXIS)
     rotation = angle_axis(axis, angle)
@@ -474,16 +475,12 @@ class OccupancyDatabase:
             color=image[j, i],
             material=np.asarray([0.0] * 23 + [1.0])
           )
+          cur.execute('SELECT * FROM occupancy WHERE x = ? AND y = ?', (position[0], position[1]))
           voxels.append(voxel)
           previous[voxel.hash()] = voxel
           mins = np.minimum(position, mins)
           maxes = np.maximum(position, maxes)
           total += 1 # What if image is entirely out of threshold
-    cur = self.connection.cursor()
-    cur.execute(
-      'SELECT * FROM occupancy WHERE x >= ? AND x <= ? AND y >= ? AND y <= ? AND z >= ? AND z <= ?',
-      [mins[0], maxes[0], mins[1], maxes[1], mins[2], maxes[2]]
-    )
     previous = {}
     rows = cur.fetchall()
     for row in rows:
