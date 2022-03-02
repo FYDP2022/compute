@@ -95,7 +95,7 @@ do_calibration = False
 
 # define video capture object
 
-stereo_camera = vslam.camera.StereoCamera(960, 540)
+stereo_camera = vslam.camera.StereoCamera(vslam.config.CONFIG.width, vslam.config.CONFIG.height)
 
 # define display window names
 
@@ -224,7 +224,7 @@ chessboard_pattern_detections_paired = 0
 chessboard_pattern_detections_left = 0
 chessboard_pattern_detections_right = 0
 
-print()
+print(do_calibration)
 print("--> hold up chessboard")
 print("press space when ready to start calibration stage  ...")
 print()
@@ -707,5 +707,6 @@ while (keep_processing):
 # close all windows and cams.
 
 cv2.destroyAllWindows()
+stereo_camera.close()
 
 #####################################################################

@@ -1,17 +1,23 @@
 from cmath import isinf
+from collections import deque
 from copy import deepcopy
 from enum import Enum, unique
 import json
 import math
+import queue
+import random
 import os
-from pickletools import floatnl
 from rtree import index
 import sqlite3
 import statistics
 import scipy.stats as st
+import scipy.ndimage as ndi
+import skimage
+from skimage.morphology import disk
 from typing import Any, Generator, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 import numpy as np
+import cv2 as cv
 
 from vslam.parameters import CameraParameters
 from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection, spherical_angles, spherical_coordinates, spherical_rotation_matrix
@@ -58,8 +64,8 @@ class Feature:
     color = np.asarray((0, 0, 0))
     n = 0.0
     depth = []
-    for i in range(x - window_size, x + window_size):
-      for j in range(y - window_size, y + window_size):
+    for j in range(y - window_size, y + window_size):
+      for i in range(x - window_size, x + window_size):
         if i < CONFIG.width and j < CONFIG.height and math.sqrt((i - x) ** 2 + (j - y) ** 2) <= window_size:
           n += 1.0
           color = color * (n - 1) / n + np.asarray(image[j, i]) / n
@@ -101,7 +107,7 @@ class Feature:
     """
     return (float(n - 2) / (n - 1)) * deviation + np.power(sample - mean, 2) / float(n)
 
-  def deviation(self, other: 'Feature') -> floatnl:
+  def deviation(self, other: 'Feature') -> float:
     """
     Compute position, radius and orientation deviations between two features.
     """
@@ -398,5 +404,152 @@ class FeatureDatabase:
         add.append(feature)
     self.update_features(add)
 
+@dataclass
+class Voxel:
+  id: int = 0
+  n: int = 1
+  position: Tuple[int, int, int] = field(default_factory=lambda: (0, 0, 0))
+  color: Color = field(default_factory=lambda: np.asarray((0, 0, 0)))
+  material: List[int] = field(default_factory=lambda: np.asarray([0.0] * 24))
+
+  def hash(self) -> str:
+    return "{},{}".format(self.position[0], self.position[2])
+  
+  def from_row(row) -> 'Voxel':
+    return Voxel(
+      row[0], row[1], (row[2], row[3], row[4]), np.asarray((row[5], row[6], row[7])),
+      list(map(lambda x: float(x), row[8].split(',')))
+    )
+  
+  def value(self) -> Tuple:
+    return (
+      self.id, self.n, self.position[0], self.position[1], self.position[2], int(self.color[0]),
+      int(self.color[1]), int(self.color[2]), ','.join(str(mat) for mat in self.material)
+    )
+
+class OccupancyDatabase:
+  VOXEL_SIZE = 0.1
+  ALL = "id, n, x, y, z, color_r, color_g, color_b, material"
+
+  def __init__(self) -> 'OccupancyDatabase':
+    self.connection = sqlite3.connect(os.path.join(CONFIG.databasePath, 'occupancy.sqlite'))
+    cur = self.connection.cursor()
+    cur.execute('''
+      CREATE TABLE IF NOT EXISTS occupancy (
+        id INTEGER PRIMARY KEY,
+        n INTEGER,
+        x INTEGER,
+        y INTEGER,
+        z INTEGER,
+        color_r INTEGER,
+        color_g INTEGER,
+        color_b INTEGER,
+        material INTEGER,
+        CONSTRAINT XZ UNIQUE (x, z)
+      )
+    ''')
+    cur.execute('SELECT MAX(id) FROM occupancy')
+    row = cur.fetchone()
+    self.id_counter = row[0] if row[0] is not None else 1
+  
+  def clear(self):
+    cur = self.connection.cursor()
+    cur.execute('DELETE FROM occupancy')
+    self.connection.commit()
+  
+  def apply_voxels(self, image: Any, points3d: Any, disparity, state: State):
+    THRESHOLD = 5
+    SAMPLES = 1000
+    cur = self.connection.cursor()
+    angle = angle_between(state.forward, Z_AXIS)
+    axis = np.cross(state.forward, Z_AXIS)
+    rotation = angle_axis(axis, angle)
+    voxels: List[Voxel] = []
+    mins = np.asarray([0.0, 0.0, 0.0])
+    maxes = np.asarray([0.0, 0.0, 0.0])
+    total = 0
+    previous = {}
+    while total < SAMPLES:
+      i = random.randint(0, CONFIG.width - 1)
+      j = random.randint(0, CONFIG.height - 1)
+      if disparity[j, i] > THRESHOLD and not isinf(disparity[j, i]):
+        v = np.dot(rotation, pixel_ray(Z_AXIS, i, j)) * (points3d[j, i, 2] / 1000.0)
+        position = np.floor((v + state.position) / OccupancyDatabase.VOXEL_SIZE)
+        if not "{},{}".format(position[0], position[2]) in previous:
+          voxel = Voxel(
+            position=(position[0], position[1], position[2]),
+            color=image[j, i],
+            material=np.asarray([0.0] * 23 + [1.0])
+          )
+          cur.execute('SELECT * FROM occupancy WHERE x = ? AND y = ?', (position[0], position[1]))
+          voxels.append(voxel)
+          previous[voxel.hash()] = voxel
+          mins = np.minimum(position, mins)
+          maxes = np.maximum(position, maxes)
+          total += 1 # What if image is entirely out of threshold
+    previous = {}
+    rows = cur.fetchall()
+    for row in rows:
+      voxel = Voxel.from_row(row)
+      previous[voxel.hash()] = voxel
+    values = []
+    for voxel in voxels:
+      if voxel.hash() in previous:
+        original = previous[voxel.hash()]
+        n = original.n + 1
+        voxel.id = original.id
+        voxel.n = n
+        voxel.color = np.floor(original.color * (n - 1) / n + voxel.color / n).astype(np.uint8)
+        voxel.material = original.material * (n - 1) / n + voxel.material / n
+      else:
+        voxel.id = self.id_counter
+        self.id_counter += 1
+      previous[voxel.hash()] = voxel
+      values.append(voxel.value())
+    cur.executemany('INSERT OR REPLACE INTO occupancy VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', values)
+    self.connection.commit()
+
+  def clamp(self, i: int, upper: int):
+    return max(0, min(i, upper))
+
+  def fill_image(self, image, color, p1: Tuple[int, int], p2: Tuple[int, int]):
+    cv.rectangle(image, p1, p2, (int(color[0]), int(color[1]), int(color[2])), -1)
+  
+  def is_dead(self, image, i: int, j: int) -> bool:
+    if i + 1 < 0 or j + 1 < 0 or i + 1 >= CONFIG.map_width or j + 1 >= CONFIG.map_height:
+      return False
+    pixel = image[j + 1, i + 1]
+    return pixel[0] == 255 and pixel[1] == 255 and pixel[2] == 255
+  
+  def visualize(self) -> Any:
+    cur = self.connection.cursor()
+    cur.execute('SELECT MIN(x), MAX(x), MIN(z), MAX(z) from occupancy')
+    min_x, max_x, min_z, max_z = cur.fetchone()
+    image = np.full((CONFIG.map_height, CONFIG.map_width, 3), (255, 255, 255), dtype=np.uint8)
+    if min_x is None or max_x is None or min_z is None or max_z is None:
+      return image
+    else:
+      delta_x = max_x - min_x
+      delta_z = max_z - min_z
+      x_skip = int(math.floor(CONFIG.map_width / delta_x))
+      z_skip = int(math.floor(CONFIG.map_height / delta_z))
+      for row in cur.execute('SELECT * FROM occupancy'):
+        voxel = Voxel.from_row(row)
+        x1 = (voxel.position[0] - min_x) / delta_x
+        z1 = (voxel.position[2] - min_z) / delta_z
+        i = int(math.floor(x1 * CONFIG.map_width))
+        i = i - i % x_skip
+        j = int(math.floor(z1 * CONFIG.map_height))
+        j = j - j % z_skip
+        self.fill_image(
+          image, voxel.color,
+          (i, j),
+          (i + x_skip, j + z_skip)
+        )
+      RADIUS = 25
+      image = cv.medianBlur(image, RADIUS * 2 + 1)
+      return np.flip(image, axis=0)
+
 metadata_database = MetadataDatabase()
 feature_database = FeatureDatabase()
+occupancy_database = OccupancyDatabase()
