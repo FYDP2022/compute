@@ -40,8 +40,8 @@ class Config:
     databasePath: str = 'com',
     width: int = 960,
     height: int = 540,
-    map_width: int = 1920,
-    map_height: int = 1080
+    map_width: int = 500,
+    map_height: int = 750
   ) -> 'Config':
     self.debug = debug
     self.interval = interval
