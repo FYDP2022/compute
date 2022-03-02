@@ -64,8 +64,8 @@ class Feature:
     color = np.asarray((0, 0, 0))
     n = 0.0
     depth = []
-    for i in range(x - window_size, x + window_size):
-      for j in range(y - window_size, y + window_size):
+    for j in range(y - window_size, y + window_size):
+      for i in range(x - window_size, x + window_size):
         if i < CONFIG.width and j < CONFIG.height and math.sqrt((i - x) ** 2 + (j - y) ** 2) <= window_size:
           n += 1.0
           color = color * (n - 1) / n + np.asarray(image[j, i]) / n
