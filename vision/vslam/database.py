@@ -3,8 +3,8 @@ from copy import deepcopy
 from enum import Enum, unique
 import json
 import math
+import random
 import os
-from pickletools import floatnl
 from rtree import index
 import sqlite3
 import statistics
@@ -101,7 +101,7 @@ class Feature:
     """
     return (float(n - 2) / (n - 1)) * deviation + np.power(sample - mean, 2) / float(n)
 
-  def deviation(self, other: 'Feature') -> floatnl:
+  def deviation(self, other: 'Feature') -> float:
     """
     Compute position, radius and orientation deviations between two features.
     """
@@ -398,5 +398,116 @@ class FeatureDatabase:
         add.append(feature)
     self.update_features(add)
 
+@dataclass
+class Voxel:
+  id: int = 0
+  n: int = 1
+  position: Tuple[int, int, int] = field(default_factory=lambda: (0, 0, 0))
+  color: Color = field(default_factory=lambda: np.asarray((0, 0, 0)))
+  material: List[int] = field(default_factory=lambda: np.asarray([0.0] * 24))
+
+  def hash(self) -> str:
+    return "{},{}".format(self.position[0], self.position[1])
+  
+  def from_row(row) -> 'Voxel':
+    return Voxel(
+      row[0], row[1], (row[2], row[3], row[4]), np.asarray((row[5], row[6], row[7])),
+      list(map(lambda x: float(x), row[8].split(',')))
+    )
+  
+  def value(self) -> Tuple:
+    return (
+      self.id, self.n, self.position[0], self.position[1], self.position[2], int(self.color[0]),
+      int(self.color[1]), int(self.color[2]), ','.join(str(mat) for mat in self.material)
+    )
+
+class OccupancyDatabase:
+  VOXEL_SIZE = 0.1
+  ALL = "id, n, x, y, z, color_r, color_g, color_b, material"
+
+  def __init__(self) -> 'OccupancyDatabase':
+    self.connection = sqlite3.connect(os.path.join(CONFIG.databasePath, 'occupancy.sqlite'))
+    cur = self.connection.cursor()
+    cur.execute('''
+      CREATE TABLE IF NOT EXISTS occupancy (
+        id INTEGER PRIMARY KEY,
+        n INTEGER,
+        x INTEGER,
+        y INTEGER,
+        z INTEGER,
+        color_r INTEGER,
+        color_g INTEGER,
+        color_b INTEGER,
+        material INTEGER,
+        CONSTRAINT XY UNIQUE (x, y, z)
+      )
+    ''')
+    cur.execute('SELECT MAX(id) FROM occupancy')
+    row = cur.fetchone()
+    self.id_counter = row[0] if row[0] is not None else 1
+  
+  def clear(self):
+    cur = self.connection.cursor()
+    cur.execute('DELETE FROM occupancy')
+    self.connection.commit()
+  
+  def apply_voxels(self, image: Any, points3d: Any, disparity, state: State):
+    THRESHOLD = 5
+    SAMPLES = 1000
+    angle = angle_between(state.forward, Z_AXIS)
+    axis = np.cross(state.forward, Z_AXIS)
+    rotation = angle_axis(axis, angle)
+    voxels: List[Voxel] = []
+    mins = np.asarray([0.0, 0.0, 0.0])
+    maxes = np.asarray([0.0, 0.0, 0.0])
+    total = 0
+    previous = {}
+    while total < SAMPLES:
+      i = random.randint(0, CONFIG.width - 1)
+      j = random.randint(0, CONFIG.height - 1)
+      if not "{},{}".format(i, j) in previous:
+        if disparity[j, i] > THRESHOLD and not isinf(disparity[j, i]):
+          v = np.dot(rotation, pixel_ray(Z_AXIS, i, j)) * (points3d[j, i, 2] / 1000.0)
+          position = np.floor((v + state.position) / OccupancyDatabase.VOXEL_SIZE)
+          voxel = Voxel(
+            position=(position[0], position[1], position[2]),
+            color=image[j, i],
+            material=np.asarray([0.0] * 23 + [1.0])
+          )
+          voxels.append(voxel)
+          previous[voxel.hash()] = voxel
+          mins = np.minimum(position, mins)
+          maxes = np.maximum(position, maxes)
+          total += 1 # What if image is entirely out of threshold
+    cur = self.connection.cursor()
+    cur.execute(
+      'SELECT * FROM occupancy WHERE x >= ? AND x <= ? AND y >= ? AND y <= ? AND z >= ? AND z <= ?',
+      [mins[0], maxes[0], mins[1], maxes[1], mins[2], maxes[2]]
+    )
+    previous = {}
+    rows = cur.fetchall()
+    for row in rows:
+      voxel = Voxel.from_row(row)
+      previous[voxel.hash()] = voxel
+    values = []
+    for voxel in voxels:
+      if voxel.hash() in previous:
+        original = previous[voxel.hash()]
+        n = original.n + 1
+        voxel.id = original.id
+        voxel.n = n
+        voxel.color = np.floor(original.color * (n - 1) / n + voxel.color / n).astype(np.uint8)
+        voxel.material = original.material * (n - 1) / n + voxel.material / n
+      else:
+        voxel.id = self.id_counter
+        self.id_counter += 1
+      previous[voxel.hash()] = voxel
+      values.append(voxel.value())
+    cur.executemany('INSERT OR REPLACE INTO occupancy VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', values)
+    self.connection.commit()
+  
+  # def visualize(self) -> Any:
+
 metadata_database = MetadataDatabase()
 feature_database = FeatureDatabase()
+occupancy_database = OccupancyDatabase()
