@@ -1,5 +1,6 @@
 import os
 import traceback
+from typing import Any
 import cv2 as cv
 from datetime import datetime
 
@@ -33,6 +34,9 @@ class App:
   def clear(self):
     feature_database.clear()
     occupancy_database.clear()
+  
+  def visualize(self) -> Any:
+    return occupancy_database.visualize()
   
   def run(self):
     try:
@@ -85,3 +89,6 @@ class App:
       print('ERROR: {}'.format(e))
       print(traceback.format_exc())
       self.camera.close()
+  
+  def close(self):
+    self.camera.close()

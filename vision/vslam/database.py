@@ -407,7 +407,7 @@ class Voxel:
   material: List[int] = field(default_factory=lambda: np.asarray([0.0] * 24))
 
   def hash(self) -> str:
-    return "{},{}".format(self.position[0], self.position[1])
+    return "{},{}".format(self.position[0], self.position[2])
   
   def from_row(row) -> 'Voxel':
     return Voxel(
@@ -439,7 +439,7 @@ class OccupancyDatabase:
         color_g INTEGER,
         color_b INTEGER,
         material INTEGER,
-        CONSTRAINT XY UNIQUE (x, y, z)
+        CONSTRAINT XZ UNIQUE (x, z)
       )
     ''')
     cur.execute('SELECT MAX(id) FROM occupancy')
@@ -466,10 +466,10 @@ class OccupancyDatabase:
     while total < SAMPLES:
       i = random.randint(0, CONFIG.width - 1)
       j = random.randint(0, CONFIG.height - 1)
-      if not "{},{}".format(i, j) in previous:
-        if disparity[j, i] > THRESHOLD and not isinf(disparity[j, i]):
-          v = np.dot(rotation, pixel_ray(Z_AXIS, i, j)) * (points3d[j, i, 2] / 1000.0)
-          position = np.floor((v + state.position) / OccupancyDatabase.VOXEL_SIZE)
+      if disparity[j, i] > THRESHOLD and not isinf(disparity[j, i]):
+        v = np.dot(rotation, pixel_ray(Z_AXIS, i, j)) * (points3d[j, i, 2] / 1000.0)
+        position = np.floor((v + state.position) / OccupancyDatabase.VOXEL_SIZE)
+        if not "{},{}".format(position[0], position[2]) in previous:
           voxel = Voxel(
             position=(position[0], position[1], position[2]),
             color=image[j, i],
@@ -503,7 +503,34 @@ class OccupancyDatabase:
     cur.executemany('INSERT OR REPLACE INTO occupancy VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', values)
     self.connection.commit()
   
-  # def visualize(self) -> Any:
+  def visualize(self) -> Any:
+    cur = self.connection.cursor()
+    # cur2 = self.connection.cursor()
+    cur.execute('SELECT MIN(x), MAX(x), MIN(z), MAX(z) from occupancy')
+    min_x, max_x, min_z, max_z = cur.fetchone()
+    image = np.zeros((CONFIG.map_height, CONFIG.map_width, 3), dtype=np.uint8)
+    if min_x is None or max_x is None or min_z is None or max_z is None:
+      return image
+    else:
+      delta_x = max_x - min_x
+      delta_z = max_z - min_z
+      # cur.execute('SELECT * FROM occupancy')
+      # all = [Voxel.from_row(row) for row in cur.fetchall()]
+      for row in cur.execute('SELECT * FROM occupancy'):
+        voxel = Voxel.from_row(row)
+        x1 = (voxel.position[0] - min_x) / delta_x
+        x2 = (voxel.position[0] - min_x + 1) / delta_x
+        z1 = (voxel.position[2] - min_z) / delta_z
+        z2 = (voxel.position[2] - min_z + 1) / delta_z
+        for i in range(math.floor(x1 * CONFIG.map_width), math.floor(x2 * CONFIG.map_width)):
+          for j in range(math.floor(z1 * CONFIG.map_height), math.floor(z2 * CONFIG.map_height)):
+            if i < CONFIG.map_width and j < CONFIG.map_height:
+              image[j, i] = voxel.color
+        # cur2.execute('''
+        #   SELECT * FROM occupancy
+        #   WHERE id IN (SELECT id FROM occupancy WHERE SQRT(x * x + z * z))
+        # ''')
+      return image
 
 metadata_database = MetadataDatabase()
 feature_database = FeatureDatabase()
