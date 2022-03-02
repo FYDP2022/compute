@@ -1,4 +1,5 @@
 scikit-build
+scikit-image
 opencv-contrib-python
 dataclasses
 Rtree

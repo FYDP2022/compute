@@ -1,4 +1,5 @@
 from cmath import isinf
+from collections import deque
 from copy import deepcopy
 from enum import Enum, unique
 import json
@@ -10,6 +11,9 @@ from rtree import index
 import sqlite3
 import statistics
 import scipy.stats as st
+import scipy.ndimage as ndi
+import skimage
+from skimage.morphology import disk
 from typing import Any, Generator, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 import numpy as np
@@ -505,8 +509,8 @@ class OccupancyDatabase:
     cur.executemany('INSERT OR REPLACE INTO occupancy VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', values)
     self.connection.commit()
 
-  def clamp(self, i: int, max: int):
-    return max(0, min(i, max))
+  def clamp(self, i: int, upper: int):
+    return max(0, min(i, upper))
 
   def fill_image(self, image, color, p1: Tuple[int, int], p2: Tuple[int, int]):
     # i1c, i2c = self.clamp(i1, CONFIG.map_width), self.clamp(i2, CONFIG.map_width)
@@ -527,60 +531,66 @@ class OccupancyDatabase:
     # cur2 = self.connection.cursor()
     cur.execute('SELECT MIN(x), MAX(x), MIN(z), MAX(z) from occupancy')
     min_x, max_x, min_z, max_z = cur.fetchone()
-    image = np.full((CONFIG.map_height, CONFIG.map_width, 3), (255, 255, 255), dtype=np.uint8)
     if min_x is None or max_x is None or min_z is None or max_z is None:
-      return image
+      return np.full((CONFIG.map_height, CONFIG.map_width, 3), (255, 255, 255), dtype=np.uint8)
     else:
+      image = np.empty((CONFIG.map_height, CONFIG.map_width, 3), dtype=np.float32)
+      image[:] = (np.nan, np.nan, np.nan)
       delta_x = max_x - min_x
       delta_z = max_z - min_z
       x_skip = int(math.floor(CONFIG.map_width / delta_x))
       z_skip = int(math.floor(CONFIG.map_height / delta_z))
-      # cur.execute('SELECT * FROM occupancy')
-      # all = [Voxel.from_row(row) for row in cur.fetchall()]
-      worklist = queue.Queue()
       for row in cur.execute('SELECT * FROM occupancy'):
         voxel = Voxel.from_row(row)
         x1 = (voxel.position[0] - min_x) / delta_x
-        x2 = (voxel.position[0] - min_x + 1) / delta_x
         z1 = (voxel.position[2] - min_z) / delta_z
-        z2 = (voxel.position[2] - min_z + 1) / delta_z
         i = int(math.floor(x1 * CONFIG.map_width))
         i = i - i % x_skip
         j = int(math.floor(z1 * CONFIG.map_height))
         j = j - j % z_skip
-        worklist.put((i, j, voxel.color))
-        # self.fill_image(
-        #   image, voxel.color,
-        #   math.floor(x1 * CONFIG.map_width), math.floor(x2 * CONFIG.map_width),
-        #   math.floor(z1 * CONFIG.map_height), math.floor(z2 * CONFIG.map_height)
-        # )
-        # cur2.execute('''
-        #   SELECT * FROM occupancy
-        #   WHERE id IN (SELECT id FROM occupancy WHERE SQRT(x * x + z * z))
-        # ''')
-      iters = 100 * worklist.qsize()
-      num = 0
-      while not worklist.empty() and num < iters:
-        i, j, color = worklist.get()
         self.fill_image(
-          image, color,
+          image, voxel.color,
           (i, j),
           (i + x_skip, j + z_skip)
         )
-        if self.is_dead(image, i + x_skip, j):
-          worklist.put((i + x_skip, j, color))
-        if self.is_dead(image, i, j + z_skip):
-          worklist.put((i, j + z_skip, color))
-        if self.is_dead(image, i - x_skip, j):
-          worklist.put((i - x_skip, j, color))
-        if self.is_dead(image, i, j - z_skip):
-          worklist.put((i, j - z_skip, color))
-        num += 1
-        if num % 1000 == 0:
-          print("{}/{}".format(num, iters))
-          print(worklist.qsize())
+      RADIUS = 25
+      vals = []
+      # result = np.full((CONFIG.map_height, CONFIG.map_width, 3), (math.nan, math.nan, math.nan), dtype=np.uint8)
+      # for i in range(CONFIG.map_width - CONFIG.map_width % RADIUS):
+      #   print(i)
+      #   for j in range(CONFIG.map_height - CONFIG.map_height % RADIUS):
+      #     vals.clear()
+      #     for x in range(self.clamp(i - RADIUS, CONFIG.map_width), self.clamp(i + RADIUS, CONFIG.map_width)):
+      #       for y in range(self.clamp(j - RADIUS, CONFIG.map_height), self.clamp(j + RADIUS, CONFIG.map_height)):
+      #         if math.sqrt((x - i) ** 2 + (y - j) ** 2) <= RADIUS and not self.is_dead(image, x, y):
+      #           vals.append(np.asarray(image[y, x]))
+      #     if len(vals) > 0:
+      #       pixel = np.floor(np.mean(vals, axis=0))
+      #       result[j, i] = (int(pixel[0]), int(pixel[1]), int(pixel[2]))
+      # image = cv.medianBlur(image, RADIUS * 2 + 1)
+      # return image
+      nanmask = np.isnan(image)
+      dsk = disk(RADIUS)
+
+      # zeroed = image.copy()
+      # zeroed[nanmask] = 0
+      # padded = zeroed.pad()
+
+      # nan_blur = image.copy()
+      # nan_blur[nanmask] = 0
+      # nan_blur = cv.medianBlur(nan_blur, RADIUS * 2 + 1)
+      # image = 0 * image + 1
+      # image[nanmask] = 0
+
+      red = ndi.generic_filter(image[:, :, 0], np.nanmedian, footprint=dsk)
+      green = ndi.generic_filter(image[:, :, 1], np.nanmedian, footprint=dsk)
+      blue = ndi.generic_filter(image[:, :, 2], np.nanmedian, footprint=dsk)
+      image = np.dstack((red, green, blue))
+      image[np.isnan(image)] = 255
+      print(np.max(image))
+      image = image.astype(np.uint8)
+
       # Flip image vertically
-      # image = cv.GaussianBlur(image, (4 * x_skip + 1, 4 * z_skip + 1), x_skip, sigmaY=z_skip)
       return image
 
 metadata_database = MetadataDatabase()
