@@ -3,6 +3,7 @@ from copy import deepcopy
 from enum import Enum, unique
 import json
 import math
+import queue
 import random
 import os
 from rtree import index
@@ -12,6 +13,7 @@ import scipy.stats as st
 from typing import Any, Generator, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 import numpy as np
+import cv2 as cv
 
 from vslam.parameters import CameraParameters
 from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection, spherical_angles, spherical_coordinates, spherical_rotation_matrix
@@ -502,34 +504,83 @@ class OccupancyDatabase:
       values.append(voxel.value())
     cur.executemany('INSERT OR REPLACE INTO occupancy VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', values)
     self.connection.commit()
+
+  def clamp(self, i: int, max: int):
+    return max(0, min(i, max))
+
+  def fill_image(self, image, color, p1: Tuple[int, int], p2: Tuple[int, int]):
+    # i1c, i2c = self.clamp(i1, CONFIG.map_width), self.clamp(i2, CONFIG.map_width)
+    cv.rectangle(image, p1, p2, (int(color[0]), int(color[1]), int(color[2])), -1)
+    # for i in range(self.cla):
+    #   for j in range(j1, j2):
+    #     if i < CONFIG.map_width and j < CONFIG.map_height:
+    #       image[j, i] = color
+  
+  def is_dead(self, image, i: int, j: int) -> bool:
+    if i + 1 < 0 or j + 1 < 0 or i + 1 >= CONFIG.map_width or j + 1 >= CONFIG.map_height:
+      return False
+    pixel = image[j + 1, i + 1]
+    return pixel[0] == 255 and pixel[1] == 255 and pixel[2] == 255
   
   def visualize(self) -> Any:
     cur = self.connection.cursor()
     # cur2 = self.connection.cursor()
     cur.execute('SELECT MIN(x), MAX(x), MIN(z), MAX(z) from occupancy')
     min_x, max_x, min_z, max_z = cur.fetchone()
-    image = np.zeros((CONFIG.map_height, CONFIG.map_width, 3), dtype=np.uint8)
+    image = np.full((CONFIG.map_height, CONFIG.map_width, 3), (255, 255, 255), dtype=np.uint8)
     if min_x is None or max_x is None or min_z is None or max_z is None:
       return image
     else:
       delta_x = max_x - min_x
       delta_z = max_z - min_z
+      x_skip = int(math.floor(CONFIG.map_width / delta_x))
+      z_skip = int(math.floor(CONFIG.map_height / delta_z))
       # cur.execute('SELECT * FROM occupancy')
       # all = [Voxel.from_row(row) for row in cur.fetchall()]
+      worklist = queue.Queue()
       for row in cur.execute('SELECT * FROM occupancy'):
         voxel = Voxel.from_row(row)
         x1 = (voxel.position[0] - min_x) / delta_x
         x2 = (voxel.position[0] - min_x + 1) / delta_x
         z1 = (voxel.position[2] - min_z) / delta_z
         z2 = (voxel.position[2] - min_z + 1) / delta_z
-        for i in range(math.floor(x1 * CONFIG.map_width), math.floor(x2 * CONFIG.map_width)):
-          for j in range(math.floor(z1 * CONFIG.map_height), math.floor(z2 * CONFIG.map_height)):
-            if i < CONFIG.map_width and j < CONFIG.map_height:
-              image[j, i] = voxel.color
+        i = int(math.floor(x1 * CONFIG.map_width))
+        i = i - i % x_skip
+        j = int(math.floor(z1 * CONFIG.map_height))
+        j = j - j % z_skip
+        worklist.put((i, j, voxel.color))
+        # self.fill_image(
+        #   image, voxel.color,
+        #   math.floor(x1 * CONFIG.map_width), math.floor(x2 * CONFIG.map_width),
+        #   math.floor(z1 * CONFIG.map_height), math.floor(z2 * CONFIG.map_height)
+        # )
         # cur2.execute('''
         #   SELECT * FROM occupancy
         #   WHERE id IN (SELECT id FROM occupancy WHERE SQRT(x * x + z * z))
         # ''')
+      iters = 100 * worklist.qsize()
+      num = 0
+      while not worklist.empty() and num < iters:
+        i, j, color = worklist.get()
+        self.fill_image(
+          image, color,
+          (i, j),
+          (i + x_skip, j + z_skip)
+        )
+        if self.is_dead(image, i + x_skip, j):
+          worklist.put((i + x_skip, j, color))
+        if self.is_dead(image, i, j + z_skip):
+          worklist.put((i, j + z_skip, color))
+        if self.is_dead(image, i - x_skip, j):
+          worklist.put((i - x_skip, j, color))
+        if self.is_dead(image, i, j - z_skip):
+          worklist.put((i, j - z_skip, color))
+        num += 1
+        if num % 1000 == 0:
+          print("{}/{}".format(num, iters))
+          print(worklist.qsize())
+      # Flip image vertically
+      # image = cv.GaussianBlur(image, (4 * x_skip + 1, 4 * z_skip + 1), x_skip, sigmaY=z_skip)
       return image
 
 metadata_database = MetadataDatabase()
