@@ -513,12 +513,7 @@ class OccupancyDatabase:
     return max(0, min(i, upper))
 
   def fill_image(self, image, color, p1: Tuple[int, int], p2: Tuple[int, int]):
-    # i1c, i2c = self.clamp(i1, CONFIG.map_width), self.clamp(i2, CONFIG.map_width)
     cv.rectangle(image, p1, p2, (int(color[0]), int(color[1]), int(color[2])), -1)
-    # for i in range(self.cla):
-    #   for j in range(j1, j2):
-    #     if i < CONFIG.map_width and j < CONFIG.map_height:
-    #       image[j, i] = color
   
   def is_dead(self, image, i: int, j: int) -> bool:
     if i + 1 < 0 or j + 1 < 0 or i + 1 >= CONFIG.map_width or j + 1 >= CONFIG.map_height:
@@ -528,14 +523,12 @@ class OccupancyDatabase:
   
   def visualize(self) -> Any:
     cur = self.connection.cursor()
-    # cur2 = self.connection.cursor()
     cur.execute('SELECT MIN(x), MAX(x), MIN(z), MAX(z) from occupancy')
     min_x, max_x, min_z, max_z = cur.fetchone()
+    image = np.full((CONFIG.map_height, CONFIG.map_width, 3), (255, 255, 255), dtype=np.uint8)
     if min_x is None or max_x is None or min_z is None or max_z is None:
-      return np.full((CONFIG.map_height, CONFIG.map_width, 3), (255, 255, 255), dtype=np.uint8)
+      return image
     else:
-      image = np.empty((CONFIG.map_height, CONFIG.map_width, 3), dtype=np.float32)
-      image[:] = (np.nan, np.nan, np.nan)
       delta_x = max_x - min_x
       delta_z = max_z - min_z
       x_skip = int(math.floor(CONFIG.map_width / delta_x))
@@ -554,44 +547,8 @@ class OccupancyDatabase:
           (i + x_skip, j + z_skip)
         )
       RADIUS = 25
-      vals = []
-      # result = np.full((CONFIG.map_height, CONFIG.map_width, 3), (math.nan, math.nan, math.nan), dtype=np.uint8)
-      # for i in range(CONFIG.map_width - CONFIG.map_width % RADIUS):
-      #   print(i)
-      #   for j in range(CONFIG.map_height - CONFIG.map_height % RADIUS):
-      #     vals.clear()
-      #     for x in range(self.clamp(i - RADIUS, CONFIG.map_width), self.clamp(i + RADIUS, CONFIG.map_width)):
-      #       for y in range(self.clamp(j - RADIUS, CONFIG.map_height), self.clamp(j + RADIUS, CONFIG.map_height)):
-      #         if math.sqrt((x - i) ** 2 + (y - j) ** 2) <= RADIUS and not self.is_dead(image, x, y):
-      #           vals.append(np.asarray(image[y, x]))
-      #     if len(vals) > 0:
-      #       pixel = np.floor(np.mean(vals, axis=0))
-      #       result[j, i] = (int(pixel[0]), int(pixel[1]), int(pixel[2]))
-      # image = cv.medianBlur(image, RADIUS * 2 + 1)
-      # return image
-      nanmask = np.isnan(image)
-      dsk = disk(RADIUS)
-
-      # zeroed = image.copy()
-      # zeroed[nanmask] = 0
-      # padded = zeroed.pad()
-
-      # nan_blur = image.copy()
-      # nan_blur[nanmask] = 0
-      # nan_blur = cv.medianBlur(nan_blur, RADIUS * 2 + 1)
-      # image = 0 * image + 1
-      # image[nanmask] = 0
-
-      red = ndi.generic_filter(image[:, :, 0], np.nanmedian, footprint=dsk)
-      green = ndi.generic_filter(image[:, :, 1], np.nanmedian, footprint=dsk)
-      blue = ndi.generic_filter(image[:, :, 2], np.nanmedian, footprint=dsk)
-      image = np.dstack((red, green, blue))
-      image[np.isnan(image)] = 255
-      print(np.max(image))
-      image = image.astype(np.uint8)
-
-      # Flip image vertically
-      return image
+      image = cv.medianBlur(image, RADIUS * 2 + 1)
+      return np.flip(image, axis=0)
 
 metadata_database = MetadataDatabase()
 feature_database = FeatureDatabase()
