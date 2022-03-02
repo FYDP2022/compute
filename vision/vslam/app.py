@@ -1,5 +1,6 @@
 import os
 import traceback
+from typing import Any
 import cv2 as cv
 from datetime import datetime
 
@@ -7,7 +8,7 @@ from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
 from vslam.parameters import CalibrationParameters
-from vslam.database import Feature, Observe, feature_database
+from vslam.database import Feature, Observe, feature_database, occupancy_database
 from vslam.config import CONFIG, DebugWindows
 from vslam.depth import DepthEstimator
 from vslam.camera import StereoCamera
@@ -32,6 +33,10 @@ class App:
 
   def clear(self):
     feature_database.clear()
+    occupancy_database.clear()
+  
+  def visualize(self) -> Any:
+    return occupancy_database.visualize()
   
   def run(self):
     try:
@@ -69,6 +74,7 @@ class App:
         # TODO: add variance term computed from dynamics & sensor calculation -> use SGD error to compute sigma
         processed, probability = feature_database.observe(estimate, features, Observe.PROCESSED)
         feature_database.apply_features(processed)
+        occupancy_database.apply_voxels(left, points3d, disparity, estimate)
         self.state = estimate
         print(self.state)
         # Timing & metrics
@@ -83,3 +89,6 @@ class App:
       print('ERROR: {}'.format(e))
       print(traceback.format_exc())
       self.camera.close()
+  
+  def close(self):
+    self.camera.close()

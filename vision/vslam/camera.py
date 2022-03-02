@@ -49,11 +49,12 @@ class StereoCamera:
       cv.resizeWindow(StereoCamera.RIGHT_WINDOW_NAME, self.width, self.height)
 
   def close(self):
-    self.stopped = True
-    self.t1.join(5)
-    self.t2.join(5)
-    self.capture[CameraIndex.LEFT].release()
-    self.capture[CameraIndex.RIGHT].release()
+    if not self.stopped:
+      self.stopped = True
+      self.t1.join(5)
+      self.t2.join(5)
+      self.capture[CameraIndex.LEFT].release()
+      self.capture[CameraIndex.RIGHT].release()
 
   def _signalHandler(self, sig, frame):
     self.close()
