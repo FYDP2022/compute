@@ -3,6 +3,7 @@ import traceback
 from typing import Any
 import cv2 as cv
 from datetime import datetime
+from vslam.sensors import IMUSensor
 
 from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
@@ -20,12 +21,13 @@ class App:
 
   def __init__(self) -> 'App':
     self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
-    self.camera = StereoCamera(CONFIG.width, CONFIG.height)
+    # self.camera = StereoCamera(CONFIG.width, CONFIG.height)
+    self.sensor = IMUSensor()
     self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
     self.semantic = SemanticSegmentationModel()
     self.dynamics = DynamicsModel()
     self.slam = GradientAscentSLAM()
-    self.state = State()
+    self.state = self.sensor.calibrate()
     self.keypoint = cv.SIFT_create()
     if DebugWindows.KEYPOINT in CONFIG.windows:
       cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
@@ -39,6 +41,11 @@ class App:
     return occupancy_database.visualize()
   
   def run(self):
+    feature_database.initialize()
+    while True:
+      delta = self.sensor.step(self.state)
+      self.state = self.state.apply_delta(delta)
+      print(self.state)
     try:
       # test = feature_database.batch_select([6, 7])
       # print(test[0].probability(test[1], self.state))
@@ -88,7 +95,8 @@ class App:
     except Exception as e:
       print('ERROR: {}'.format(e))
       print(traceback.format_exc())
-      self.camera.close()
+    self.close()
   
   def close(self):
+    self.sensor.close()
     self.camera.close()
