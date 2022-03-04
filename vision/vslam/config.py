@@ -8,7 +8,8 @@ class DebugWindows(Flag):
   REMAP = 2
   DEPTH = 4
   KEYPOINT = 8
-  ALL = 15
+  SEMANTIC = 16
+  ALL = 31
 
   def __contains__(self, item: 'DebugWindows'):
     return (self.value & item.value) == item.value

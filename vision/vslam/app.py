@@ -3,6 +3,7 @@ import traceback
 from typing import Any
 import cv2 as cv
 from datetime import datetime
+from vslam.sensors import IMUSensor
 
 from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
@@ -21,11 +22,12 @@ class App:
   def __init__(self) -> 'App':
     self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
     self.camera = StereoCamera(CONFIG.width, CONFIG.height)
+    self.sensor = IMUSensor()
     self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
     self.semantic = SemanticSegmentationModel()
     self.dynamics = DynamicsModel()
     self.slam = GradientAscentSLAM()
-    self.state = State()
+    self.state = self.sensor.calibrate()
     self.keypoint = cv.SIFT_create()
     if DebugWindows.KEYPOINT in CONFIG.windows:
       cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
@@ -39,6 +41,7 @@ class App:
     return occupancy_database.visualize()
   
   def run(self):
+    feature_database.initialize()
     try:
       # test = feature_database.batch_select([6, 7])
       # print(test[0].probability(test[1], self.state))
@@ -56,25 +59,27 @@ class App:
           framerate = 0.0
           n = 0
         left, right = self.camera.read()
+        image = left.copy()
         grayL = cv.cvtColor(left, cv.COLOR_BGR2GRAY)
         grayR = cv.cvtColor(right, cv.COLOR_BGR2GRAY)
         disparity = self.depth.process(grayL, grayR)
         dynamics_delta, dynamics_deviation = self.dynamics.step(self.state, ControlState())
         estimate = self.state.apply_delta(dynamics_delta)
+        sensor_delta, sensor_deviation = self.sensor.step(self.state)
+        estimate = self.state.apply_delta(sensor_delta)
         kp = self.keypoint.detect(grayL)
         if DebugWindows.KEYPOINT in CONFIG.windows:
-          display = cv.drawKeypoints(grayL, kp, left, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+          display = cv.drawKeypoints(grayL, kp, image.copy(), flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
           cv.imshow(App.KEYPOINT_WINDOW_NAME, display)
         points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
-        features = [Feature.create(k, left, points3d, disparity) for k in kp]
+        features = [Feature.create(k, image, points3d, disparity) for k in kp]
         features = [f for f in features if f]
-        vision_delta, probability, deviation = self.slam.step(estimate, ControlState(), features)
+        vision_delta, probability, deviation = self.slam.step(estimate, sensor_deviation, features)
         estimate = estimate.apply_delta(vision_delta)
         estimate = estimate.apply_deviation(deviation)
-        # TODO: add variance term computed from dynamics & sensor calculation -> use SGD error to compute sigma
-        processed, probability = feature_database.observe(estimate, features, Observe.PROCESSED)
+        processed, probability = feature_database.observe(estimate, sensor_deviation, features, Observe.PROCESSED)
         feature_database.apply_features(processed)
-        occupancy_database.apply_voxels(left, points3d, disparity, estimate)
+        occupancy_database.apply_voxels(image, points3d, disparity, estimate)
         self.state = estimate
         print(self.state)
         # Timing & metrics
@@ -88,7 +93,8 @@ class App:
     except Exception as e:
       print('ERROR: {}'.format(e))
       print(traceback.format_exc())
-      self.camera.close()
+    self.close()
   
   def close(self):
+    self.sensor.close()
     self.camera.close()
