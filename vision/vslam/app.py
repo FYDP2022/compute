@@ -21,7 +21,7 @@ class App:
 
   def __init__(self) -> 'App':
     self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
-    # self.camera = StereoCamera(CONFIG.width, CONFIG.height)
+    self.camera = StereoCamera(CONFIG.width, CONFIG.height)
     self.sensor = IMUSensor()
     self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
     self.semantic = SemanticSegmentationModel()
@@ -42,10 +42,6 @@ class App:
   
   def run(self):
     feature_database.initialize()
-    while True:
-      delta = self.sensor.step(self.state)
-      self.state = self.state.apply_delta(delta)
-      print(self.state)
     try:
       # test = feature_database.batch_select([6, 7])
       # print(test[0].probability(test[1], self.state))
@@ -68,6 +64,8 @@ class App:
         disparity = self.depth.process(grayL, grayR)
         dynamics_delta, dynamics_deviation = self.dynamics.step(self.state, ControlState())
         estimate = self.state.apply_delta(dynamics_delta)
+        delta = self.sensor.step(self.state)
+        estimate = self.state.apply_delta(delta)
         kp = self.keypoint.detect(grayL)
         if DebugWindows.KEYPOINT in CONFIG.windows:
           display = cv.drawKeypoints(grayL, kp, left, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)

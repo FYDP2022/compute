@@ -131,7 +131,7 @@ class Feature:
     alignment = 1.0 - min(angle / orientation_range, 1.0)
     return overlap * alignment * (self.material == other.material)
   
-  def probability(self, other: 'Feature', estimate: State) -> float:
+  def probability(self, other: 'Feature') -> float:
     """
     Computes the probability P(yt is z | x, z),
     P(yt has size within sigma(z) of z | z) & P(yt has orientation within sigma(x) of z | z)
@@ -358,7 +358,7 @@ class FeatureDatabase:
     # * Find a feature with similar properties to current feature than guess the estimate as the exact delta to this feature
     pass
 
-  def observe(self, estimate: State, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
+  def observe(self, estimate: State, delta: Delta, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
     result = None
     if what is Observe.PROCESSED:
       result = ProcessedFeatures([])
@@ -366,14 +366,16 @@ class FeatureDatabase:
       result = []
     probability_accum = 0.0
     n = 0
+    deviation = np.linalg.norm(delta.delta_position)
     for feature in frame:
       transformed = feature.apply_basis(estimate)
       max_probability = 0.0
       max_feature = None
+      angular_deviation
       intersection = [id for id in self.index.intersection(transformed.bbox(estimate.position_deviation))]
       intersection = self.batch_select(intersection)
       for intersect in intersection:
-        probability = intersect.probability(transformed, estimate)
+        probability = intersect.probability(transformed)
         # print(probability)
         if probability > max_probability:
           max_feature = intersect
