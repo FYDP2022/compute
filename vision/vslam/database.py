@@ -20,10 +20,10 @@ import numpy as np
 import cv2 as cv
 
 from vslam.parameters import CameraParameters
-from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection, spherical_angles, spherical_coordinates, spherical_rotation_matrix
+from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, angle_between_about, normalize, normalize_basis, pixel_ray, projection, rotate_to, spherical_angles, spherical_coordinates, spherical_rotation_matrix
 from vslam.config import CONFIG
 from vslam.segmentation import Material
-from vslam.state import Delta, State
+from vslam.state import Delta, Deviation, State
 
 # NOTE: bounding boxes are in the form (x1, x2, y1, y2, z1, z2)
 BoundingBox = Tuple[float, float, float, float, float, float]
@@ -131,7 +131,7 @@ class Feature:
     alignment = 1.0 - min(angle / orientation_range, 1.0)
     return overlap * alignment * (self.material == other.material)
   
-  def probability(self, other: 'Feature', estimate: State) -> float:
+  def probability(self, other: 'Feature') -> float:
     """
     Computes the probability P(yt is z | x, z),
     P(yt has size within sigma(z) of z | z) & P(yt has orientation within sigma(x) of z | z)
@@ -212,10 +212,14 @@ class Feature:
     clone.position_deviation = p2 - p1
     return clone
   
-  def delta(self, other: 'Feature') -> Delta:
+  def delta(self, other: 'Feature', state: State) -> Delta:
+    delta_forward = other.orientation_mean - self.orientation_mean
+    rotation = rotate_to(state.forward, state.up)
+    delta_up = np.dot(rotation, other.orientation_mean) - np.dot(rotation, self.orientation_mean)
     return Delta(
       other.position_mean - self.position_mean,
-      other.orientation_mean - self.orientation_mean
+      delta_forward,
+      delta_up
     )
   
   def bbox(self, deviation: float) -> BoundingBox:
@@ -285,7 +289,7 @@ class FeatureDatabase:
   '''
 
   def __init__(self) -> 'FeatureDatabase':
-    self.index = SpatialIndex()
+    self.index = None
     self.connection = sqlite3.connect(os.path.join(CONFIG.databasePath, 'recognition.sqlite'))
     cur = self.connection.cursor()
     cur.execute('''
@@ -314,6 +318,9 @@ class FeatureDatabase:
     cur.execute('SELECT MAX(id) FROM features')
     row = cur.fetchone()
     self.id_counter = row[0] if row[0] is not None else 1
+  
+  def initialize(self):
+    self.index = SpatialIndex()
   
   def update_features(self, frame: List[Feature]):
     cur = self.connection.cursor()
@@ -344,7 +351,6 @@ class FeatureDatabase:
       os.remove(os.path.join(CONFIG.databasePath, 'spatialindex.index'))
     except OSError:
       pass
-    self.index = SpatialIndex()
     self.id_counter = 1
   
   def cold_localize(self, frame: List[Feature]) -> State:
@@ -353,7 +359,8 @@ class FeatureDatabase:
     # * Find a feature with similar properties to current feature than guess the estimate as the exact delta to this feature
     pass
 
-  def observe(self, estimate: State, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
+  def observe(self, estimate: State, deviation: Deviation, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
+    MAX_BBOX_DEVIATION = 0.15
     result = None
     if what is Observe.PROCESSED:
       result = ProcessedFeatures([])
@@ -365,10 +372,12 @@ class FeatureDatabase:
       transformed = feature.apply_basis(estimate)
       max_probability = 0.0
       max_feature = None
-      intersection = [id for id in self.index.intersection(transformed.bbox(estimate.position_deviation))]
+      angular_deviation = np.linalg.norm(feature.position_mean) * deviation.angular_deviation
+      bbox_deviation = min(np.linalg.norm(deviation.position_deviation) + angular_deviation, MAX_BBOX_DEVIATION)
+      intersection = [id for id in self.index.intersection(transformed.bbox(bbox_deviation))]
       intersection = self.batch_select(intersection)
       for intersect in intersection:
-        probability = intersect.probability(transformed, estimate)
+        probability = intersect.probability(transformed)
         # print(probability)
         if probability > max_probability:
           max_feature = intersect
@@ -376,7 +385,7 @@ class FeatureDatabase:
       if max_feature is not None:
         n += 1
         if what is not Observe.PROBABILITY:
-          measurement = VisualMeasurement(transformed, max_feature.delta(transformed), max_probability)
+          measurement = VisualMeasurement(transformed, max_feature.delta(transformed, estimate), max_probability)
           if what is Observe.PROCESSED:
             if max_probability >= FeatureDatabase.SIMILARITY_THRESHOLD:
               result.processed.append((transformed, max_feature, measurement))
