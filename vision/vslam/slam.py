@@ -18,7 +18,7 @@ class SLAM:
   def __init__(self) -> 'SLAM':
     pass
 
-  def step(self, estimate: State, delta: Delta, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
+  def step(self, estimate: State, deviation: Deviation, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
     raise NotImplementedError()
 
 class GradientAscentSLAM(SLAM):
@@ -35,7 +35,7 @@ class GradientAscentSLAM(SLAM):
   def __init__(self) -> 'SLAM':
     super().__init__()
 
-  def step(self, estimate: State, last: Delta, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
+  def step(self, estimate: State, deviation: Deviation, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
     RESOLUTION_POSITION = 0.05 # 5cm
     RESOLUTION_ANGLE = math.radians(5) # 5degree
     MAX_ITERATIONS = 5
@@ -48,8 +48,8 @@ class GradientAscentSLAM(SLAM):
 
     # Apply Gradient Ascent on visual measurement probability by computing derivatives
     # using the fundamental theorem of calculus
-    delta = deepcopy(last)
-    _, last_probability = feature_database.observe(estimate, delta, np.random.choice(frame, samples, False))
+    delta = Delta()
+    _, last_probability = feature_database.observe(estimate, deviation, np.random.choice(frame, samples, False))
     print(last_probability)
     if last_probability == 0.0:
       return delta, 0.0, Deviation()
@@ -64,8 +64,8 @@ class GradientAscentSLAM(SLAM):
         positive.position_deviation += RESOLUTION_POSITION
         negative = estimate.apply_delta(Delta(delta.delta_position - axis * RESOLUTION_POSITION, delta.delta_forward, delta.delta_up))
         negative.position_deviation += RESOLUTION_POSITION
-        _, p_upper = feature_database.observe(positive, delta, np.random.choice(frame, samples, False))
-        _, p_lower = feature_database.observe(negative, delta, np.random.choice(frame, samples, False))
+        _, p_upper = feature_database.observe(positive, deviation, np.random.choice(frame, samples, False))
+        _, p_lower = feature_database.observe(negative, deviation, np.random.choice(frame, samples, False))
         position_gradient.append((p_upper - p_lower) / (2 * RESOLUTION_POSITION))
       orientation_gradient = []
       rotation_axes = find_orthogonal_axes(estimate.apply_delta(delta).forward)
@@ -74,8 +74,8 @@ class GradientAscentSLAM(SLAM):
         positive.rotate(RESOLUTION_ANGLE, axis)
         negative = estimate.apply_delta(delta)
         negative.rotate(-RESOLUTION_ANGLE, axis)
-        _, p_upper = feature_database.observe(positive, delta, np.random.choice(frame, samples, False))
-        _, p_lower = feature_database.observe(negative, delta, np.random.choice(frame, samples, False))
+        _, p_upper = feature_database.observe(positive, deviation, np.random.choice(frame, samples, False))
+        _, p_lower = feature_database.observe(negative, deviation, np.random.choice(frame, samples, False))
         orientation_gradient.append((p_upper - p_lower) / (2 * RESOLUTION_ANGLE))
       next = Delta()
       next.delta_position += lr * (position_gradient[0] * translation_axis[0])
@@ -91,12 +91,12 @@ class GradientAscentSLAM(SLAM):
       )
       next.delta_forward = forward - estimate.forward
       next.delta_up = up - estimate.up
-      _, probability = feature_database.observe(estimate.apply_delta(next), next, np.random.choice(frame, samples, False))
+      _, probability = feature_database.observe(estimate.apply_delta(next), deviation, np.random.choice(frame, samples, False))
       last_probability = probability
       delta = next
       lr *= DECAY
       print(last_probability)
-    return delta, last_probability, Deviation()
+    return delta, last_probability, deviation
 
 class SoftmaxSLAM(SLAM):
   """
@@ -107,7 +107,7 @@ class SoftmaxSLAM(SLAM):
   def __init__(self) -> 'SoftmaxSLAM':
     super().__init__()
 
-  def step(self, estimate: State, delta: Delta, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
+  def step(self, estimate: State, deviation: Deviation, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
     measurements, pr = feature_database.observe(estimate, frame, Observe.VISUAL_MEASUREMENT)
     if len(measurements) == 0:
       return Delta(), 0.0, Deviation()
@@ -135,4 +135,4 @@ class SoftmaxSLAM(SLAM):
       np.sqrt(squared_angle_f + np.power(delta_angle_f, 2)),
       np.sqrt(squared_angle_u + np.power(delta_angle_u, 2))
     )
-    return delta, pr, deviation
+    return result, pr, deviation

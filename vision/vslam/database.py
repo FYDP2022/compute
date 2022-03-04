@@ -23,7 +23,7 @@ from vslam.parameters import CameraParameters
 from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, angle_between_about, normalize, normalize_basis, pixel_ray, projection, rotate_to, spherical_angles, spherical_coordinates, spherical_rotation_matrix
 from vslam.config import CONFIG
 from vslam.segmentation import Material
-from vslam.state import Delta, State
+from vslam.state import Delta, Deviation, State
 
 # NOTE: bounding boxes are in the form (x1, x2, y1, y2, z1, z2)
 BoundingBox = Tuple[float, float, float, float, float, float]
@@ -359,8 +359,8 @@ class FeatureDatabase:
     # * Find a feature with similar properties to current feature than guess the estimate as the exact delta to this feature
     pass
 
-  def observe(self, estimate: State, delta: Delta, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
-    MAX_BBOX_DEVIATION = 0.3
+  def observe(self, estimate: State, deviation: Deviation, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
+    MAX_BBOX_DEVIATION = 0.15
     result = None
     if what is Observe.PROCESSED:
       result = ProcessedFeatures([])
@@ -368,21 +368,12 @@ class FeatureDatabase:
       result = []
     probability_accum = 0.0
     n = 0
-    deviation = np.linalg.norm(delta.delta_position)
-    lf = estimate.forward - delta.delta_forward
-    lu = estimate.up - delta.delta_up
-    lf, lu, lr = normalize_basis(lf, lu)
-    max_angle = np.max([
-      angle_between(estimate.forward, lf),
-      angle_between(estimate.up, lu),
-      angle_between(estimate.right, lr)
-    ])
     for feature in frame:
       transformed = feature.apply_basis(estimate)
       max_probability = 0.0
       max_feature = None
-      angular_deviation = np.linalg.norm(feature.position_mean) * max_angle
-      bbox_deviation = min(deviation + angular_deviation, MAX_BBOX_DEVIATION)
+      angular_deviation = np.linalg.norm(feature.position_mean) * deviation.angular_deviation
+      bbox_deviation = min(np.linalg.norm(deviation.position_deviation) + angular_deviation, MAX_BBOX_DEVIATION)
       intersection = [id for id in self.index.intersection(transformed.bbox(bbox_deviation))]
       intersection = self.batch_select(intersection)
       for intersect in intersection:

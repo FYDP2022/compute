@@ -22,6 +22,7 @@ def angle_axis(axis, theta):
   dot = np.dot(axis, axis)
   if theta == 0.0 or dot == 0.0:
     return np.identity(3)
+  # TODO: is this CCW??
   axis = axis / math.sqrt(dot)
   a = math.cos(theta / 2.0)
   b, c, d = axis * math.sin(theta / 2.0)

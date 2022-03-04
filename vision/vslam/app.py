@@ -64,7 +64,7 @@ class App:
         disparity = self.depth.process(grayL, grayR)
         dynamics_delta, dynamics_deviation = self.dynamics.step(self.state, ControlState())
         estimate = self.state.apply_delta(dynamics_delta)
-        sensor_delta = self.sensor.step(self.state)
+        sensor_delta, sensor_deviation = self.sensor.step(self.state)
         estimate = self.state.apply_delta(sensor_delta)
         kp = self.keypoint.detect(grayL)
         if DebugWindows.KEYPOINT in CONFIG.windows:
@@ -73,11 +73,10 @@ class App:
         points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
         features = [Feature.create(k, left, points3d, disparity) for k in kp]
         features = [f for f in features if f]
-        vision_delta, probability, deviation = self.slam.step(self.state, sensor_delta, features)
+        vision_delta, probability, deviation = self.slam.step(estimate, sensor_deviation, features)
         estimate = estimate.apply_delta(vision_delta)
         estimate = estimate.apply_deviation(deviation)
-        # TODO: add variance term computed from dynamics & sensor calculation -> use SGD error to compute sigma
-        processed, probability = feature_database.observe(estimate, sensor_delta, features, Observe.PROCESSED)
+        processed, probability = feature_database.observe(estimate, sensor_deviation, features, Observe.PROCESSED)
         feature_database.apply_features(processed)
         occupancy_database.apply_voxels(left, points3d, disparity, estimate)
         self.state = estimate

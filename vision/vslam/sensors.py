@@ -1,14 +1,11 @@
 from datetime import datetime
-import math
-from queue import Queue
 import threading
 import time
 from typing import Any, Tuple
 from icm20948 import ICM20948
-from scipy.spatial.transform import Rotation
 import numpy as np
 
-from vslam.state import Delta, State
+from vslam.state import Delta, Deviation, State
 from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, angle_axis, angle_between, normalize, normalize_basis, rotate_to
 
 class IMUSensor:
@@ -35,6 +32,7 @@ class IMUSensor:
   def close(self):
     if not self.stopped:
       self.stopped = True
+      self.thread.join(5)
 
   def _runner(self):
     last_time = datetime.now()
@@ -90,7 +88,7 @@ class IMUSensor:
     print("Forward: {}, Up: {}".format(forward, up))
     return State(forward=forward, up=up, right=right)
   
-  def step(self, state: State) -> State:
+  def step(self, state: State) -> Tuple[Delta, Deviation]:
     a, g, dt = self.read()
     translation = np.array([0.0, 0.0, 0.0])
     accum_rotation = rotate_to(Y_AXIS, state.up)
@@ -113,4 +111,9 @@ class IMUSensor:
         np.dot(rotation, up)
       )
       accum_rotation = np.dot(rotation, accum_rotation)
-    return Delta(translation, forward - state.forward, up - state.up)
+    delta = Delta(translation, forward - state.forward, up - state.up)
+    deviation = Deviation(
+      np.add(np.abs(translation), np.array([1.0, 1.0, 1.0])) * np.array([len(a) * 0.001] * 3),
+      len(g) * 0.001
+    )
+    return delta, deviation
