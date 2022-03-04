@@ -27,6 +27,7 @@ class IMUSensor:
     self.state = State()
     self.mutex = threading.Lock()
     self.thread = threading.Thread(target=self._runner)
+    self.thread.daemon = True
     self.thread.start()
   
   def close(self):

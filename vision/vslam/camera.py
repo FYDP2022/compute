@@ -1,5 +1,6 @@
 from enum import IntEnum
 import queue
+import signal
 import threading
 from typing import Any, List, Tuple
 import cv2 as cv
@@ -38,6 +39,8 @@ class StereoCamera:
     self.t2 = threading.Thread(target=self._reader, args=[CameraIndex.RIGHT])
     self.t2.daemon = True
     self.t2.start()
+    self.handler = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, self._signalHandler)
     if DebugWindows.CAMERA in CONFIG.windows:
       cv.namedWindow(StereoCamera.LEFT_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(StereoCamera.LEFT_WINDOW_NAME, self.width, self.height)
@@ -50,6 +53,10 @@ class StereoCamera:
       self.barrier.reset()
       self.capture[CameraIndex.LEFT].release()
       self.capture[CameraIndex.RIGHT].release()
+
+  def _signalHandler(self, sig, frame):
+    self.close()
+    signal.signal(signal.SIGINT, self.handler)
 
   def _reader(self, camera: CameraIndex):
     try:
