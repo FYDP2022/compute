@@ -5,7 +5,7 @@ import numpy as np
 import scipy
 
 from vslam.state import Delta, Deviation
-from vslam.utils import angle_axis, angle_between, find_orthogonal_axes, normalize, random_basis, spherical_angles, spherical_rotation_matrix
+from vslam.utils import angle_axis, angle_between, find_orthogonal_axes, normalize, normalize_basis, random_basis, spherical_angles, spherical_rotation_matrix
 from vslam.state import ControlState, Delta, State
 from vslam.database import Feature, Observe, ProcessedFeatures, feature_database
 
@@ -80,10 +80,16 @@ class GradientAscentSLAM(SLAM):
       next.delta_position += lr * (position_gradient[0] * translation_axis[0])
       next.delta_position += lr * (position_gradient[1] * translation_axis[1])
       next.delta_position += lr * (position_gradient[2] * translation_axis[2])
-      orientation = estimate.forward + delta.delta_orientation
-      orientation = np.dot(angle_axis(rotation_axes[0], LR * orientation_gradient[0]), orientation)
-      orientation = np.dot(angle_axis(rotation_axes[1], LR * orientation_gradient[1]), orientation)
-      next.delta_orientation = orientation - estimate.forward
+      rotation = np.dot(
+        angle_axis(rotation_axes[0], LR * orientation_gradient[0]),
+        angle_axis(rotation_axes[1], LR * orientation_gradient[1])
+      )
+      forward, up, _ = normalize_basis(
+        np.dot(rotation, estimate.forward + delta.delta_forward),
+        np.dot(rotation, estimate.up + delta.delta_up)
+      )
+      next.delta_forward = forward - estimate.forward
+      next.delta_up = up - estimate.up
       _, probability = feature_database.observe(estimate.apply_delta(next), np.random.choice(frame, samples, False))
       last_probability = probability
       delta = next
@@ -107,19 +113,25 @@ class SoftmaxSLAM(SLAM):
     # measurements.sort(key=lambda x: x.importance_weight)
     softmax = scipy.special.softmax(list(map(lambda x: x.importance_weight, measurements)))
     delta = Delta()
-    delta_angle = 0.0
+    delta_angle_f = 0.0
+    delta_angle_u = 0.0
     squared_position = np.asarray([0.0, 0.0, 0.0])
-    squared_angle = 0.0
+    squared_angle_f = 0.0
+    squared_angle_u = 0.0
     for i, measurement in enumerate(measurements):
       delta.delta_position += softmax[i] * measurement.delta.delta_position
-      delta.delta_orientation += softmax[i] * measurement.delta.delta_orientation
-      angle = angle_between(estimate.forward, estimate.forward + measurement.delta.delta_orientation)
-      delta_angle += softmax[i] * angle
+      delta.delta_forward += softmax[i] * measurement.delta.delta_forward
+      delta.delta_up += softmax[i] * measurement.delta.delta_up
+      angle_f = angle_between(estimate.forward, estimate.forward + measurement.delta.delta_forward)
+      delta_angle_f += softmax[i] * angle_f
+      angle_u = angle_between(estimate.up, estimate.up + measurement.delta.delta_up)
+      delta_angle_u += softmax[i] * angle_u
       squared_position += softmax[i] * np.power(measurement.delta.delta_position, 2)
-      squared_angle += softmax[i] * (angle ** 2)
+      squared_angle_f += softmax[i] * (angle_f ** 2)
+      squared_angle_u += softmax[i] * (angle_u ** 2)
     deviation = Deviation(
       np.max(np.sqrt(squared_position + np.power(delta.delta_position, 2))),
-      np.sqrt(squared_angle + np.power(delta_angle, 2))
+      np.sqrt(squared_angle_f + np.power(delta_angle_f, 2)),
+      np.sqrt(squared_angle_u + np.power(delta_angle_u, 2))
     )
-    delta.delta_orientation = normalize(delta.delta_orientation)
     return delta, pr, deviation

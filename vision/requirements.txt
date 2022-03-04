@@ -7,3 +7,4 @@ Cython
 scipy
 torch
 torchvision
+icm20948

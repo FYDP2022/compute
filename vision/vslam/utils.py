@@ -1,5 +1,5 @@
 import math
-from typing import Tuple
+from typing import Any, Tuple
 import numpy as np
 
 from vslam.config import CONFIG
@@ -24,7 +24,7 @@ def angle_axis(axis, theta):
     return np.identity(3)
   axis = axis / math.sqrt(dot)
   a = math.cos(theta / 2.0)
-  b, c, d = -axis * math.sin(theta / 2.0)
+  b, c, d = axis * math.sin(theta / 2.0)
   aa, bb, cc, dd = a * a, b * b, c * c, d * d
   bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
   return np.array([
@@ -32,6 +32,20 @@ def angle_axis(axis, theta):
     [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
     [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]
   ])
+
+def rotate_to(start, end):
+  """
+  Returns rotation matrix which rotates `start` onto `end`
+  """
+  v = np.cross(start, end)
+  sine = np.linalg.norm(v)
+  cosine = np.dot(start, end)
+  skew_symmetric = np.array([
+    [0.0, -v[2], v[1]],
+    [v[2], 0.0, -v[0]],
+    [-v[1], v[0], 0.0]
+  ])
+  return np.identity(3) + skew_symmetric + np.dot(skew_symmetric, skew_symmetric) * (1 - cosine) / (sine ** 2)
 
 def normalize(vector: np.array) -> np.array:
   norm = np.linalg.norm(vector)
@@ -43,6 +57,19 @@ def angle_between(v1, v2):
   v1_u = normalize(v1)
   v2_u = normalize(v2)
   return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+def angle_between_about(v1, v2, n):
+  """
+  Angle between accounting for sign assuming rotation axis `n`
+  """
+  v1_u = normalize(v1)
+  v2_u = normalize(v2)
+  angle = np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+  cross = np.cross(v1, v2)
+  if np.dot(cross, n) > 0.0:
+    # CW rotation needed
+    return -angle
+  return angle
 
 def projection(x: np.array, y: np.array) -> np.array:
   """
@@ -93,3 +120,25 @@ def spherical_rotation_matrix(theta: float, phi: float) -> np.ndarray:
   v = spherical_coordinates(theta, phi)
   z_rot_axis = np.cross(v, Z_AXIS)
   return np.dot(angle_axis(z_rot_axis, phi), angle_axis(Z_AXIS, theta))
+
+# def look_at_matrix(forward, up):
+#   right = np.cross(forward, up)
+#   return np.array([
+#     right,
+#     up,
+#     forward
+#   ])
+
+def rotate_to_worldcoords(forward, up):
+  right = np.cross(forward, up)
+  return np.array([
+    [up[0], right[0], forward[0]],
+    [up[1], right[1], forward[1]],
+    [up[2], right[2], forward[2]]
+  ])
+
+def normalize_basis(forward, up) -> Tuple[Any, Any, Any]:
+  f = normalize(forward)
+  r = normalize(np.cross(f, up))
+  u = normalize(np.cross(r, f))
+  return f, u, r

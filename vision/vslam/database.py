@@ -212,10 +212,13 @@ class Feature:
     clone.position_deviation = p2 - p1
     return clone
   
-  def delta(self, other: 'Feature') -> Delta:
+  def delta(self, other: 'Feature', state: State) -> Delta:
+    delta_forward = other.orientation_mean - self.orientation_mean
+    delta_up = np.dot(angle_axis(state.right, angle_between(state.forward, state.up)), other.orientation_mean) - state.up
     return Delta(
       other.position_mean - self.position_mean,
-      other.orientation_mean - self.orientation_mean
+      delta_forward,
+      delta_up
     )
   
   def bbox(self, deviation: float) -> BoundingBox:
@@ -285,7 +288,7 @@ class FeatureDatabase:
   '''
 
   def __init__(self) -> 'FeatureDatabase':
-    self.index = SpatialIndex()
+    self.index = None
     self.connection = sqlite3.connect(os.path.join(CONFIG.databasePath, 'recognition.sqlite'))
     cur = self.connection.cursor()
     cur.execute('''
@@ -314,6 +317,9 @@ class FeatureDatabase:
     cur.execute('SELECT MAX(id) FROM features')
     row = cur.fetchone()
     self.id_counter = row[0] if row[0] is not None else 1
+  
+  def initialize(self):
+    self.index = SpatialIndex()
   
   def update_features(self, frame: List[Feature]):
     cur = self.connection.cursor()
@@ -344,7 +350,6 @@ class FeatureDatabase:
       os.remove(os.path.join(CONFIG.databasePath, 'spatialindex.index'))
     except OSError:
       pass
-    self.index = SpatialIndex()
     self.id_counter = 1
   
   def cold_localize(self, frame: List[Feature]) -> State:
