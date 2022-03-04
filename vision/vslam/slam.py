@@ -17,7 +17,7 @@ class SLAM:
   def __init__(self) -> 'SLAM':
     pass
 
-  def step(self, estimate: State, action: ControlState, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
+  def step(self, estimate: State, delta: Delta, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
     raise NotImplementedError()
 
 class GradientAscentSLAM(SLAM):
@@ -34,7 +34,7 @@ class GradientAscentSLAM(SLAM):
   def __init__(self) -> 'SLAM':
     super().__init__()
 
-  def step(self, estimate: State, action: ControlState, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
+  def step(self, estimate: State, delta: Delta, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
     RESOLUTION_POSITION = 0.05 # 5cm
     RESOLUTION_ANGLE = math.radians(5) # 5degree
     MAX_ITERATIONS = 5
@@ -106,22 +106,22 @@ class SoftmaxSLAM(SLAM):
   def __init__(self) -> 'SoftmaxSLAM':
     super().__init__()
 
-  def step(self, estimate: State, action: ControlState, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
+  def step(self, estimate: State, delta: Delta, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
     measurements, pr = feature_database.observe(estimate, frame, Observe.VISUAL_MEASUREMENT)
     if len(measurements) == 0:
       return Delta(), 0.0, Deviation()
     # measurements.sort(key=lambda x: x.importance_weight)
     softmax = scipy.special.softmax(list(map(lambda x: x.importance_weight, measurements)))
-    delta = Delta()
+    result = Delta()
     delta_angle_f = 0.0
     delta_angle_u = 0.0
     squared_position = np.asarray([0.0, 0.0, 0.0])
     squared_angle_f = 0.0
     squared_angle_u = 0.0
     for i, measurement in enumerate(measurements):
-      delta.delta_position += softmax[i] * measurement.delta.delta_position
-      delta.delta_forward += softmax[i] * measurement.delta.delta_forward
-      delta.delta_up += softmax[i] * measurement.delta.delta_up
+      result.delta_position += softmax[i] * measurement.delta.delta_position
+      result.delta_forward += softmax[i] * measurement.delta.delta_forward
+      result.delta_up += softmax[i] * measurement.delta.delta_up
       angle_f = angle_between(estimate.forward, estimate.forward + measurement.delta.delta_forward)
       delta_angle_f += softmax[i] * angle_f
       angle_u = angle_between(estimate.up, estimate.up + measurement.delta.delta_up)
@@ -130,7 +130,7 @@ class SoftmaxSLAM(SLAM):
       squared_angle_f += softmax[i] * (angle_f ** 2)
       squared_angle_u += softmax[i] * (angle_u ** 2)
     deviation = Deviation(
-      np.max(np.sqrt(squared_position + np.power(delta.delta_position, 2))),
+      np.max(np.sqrt(squared_position + np.power(result.delta_position, 2))),
       np.sqrt(squared_angle_f + np.power(delta_angle_f, 2)),
       np.sqrt(squared_angle_u + np.power(delta_angle_u, 2))
     )
