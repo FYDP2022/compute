@@ -47,7 +47,7 @@ class State:
   
   def apply_deviation(self, deviation: Deviation) -> 'State':
     self.position_deviation += deviation.position_deviation
-    self.orientation_deviation += deviation.orientation_deviation
+    self.orientation_deviation += max(deviation.forward_deviation, deviation.up_deviation)
     return self
   
   def rotate(self, angle: float, axis: np.array):
