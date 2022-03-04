@@ -22,8 +22,7 @@ class Delta:
 @dataclass
 class Deviation:
   position_deviation: float = 0.0
-  forward_deviation: float = 0.0
-  up_deviation: float = 0.0
+  angular_deviation: float = 0.0
   
 @dataclass
 class State:
@@ -47,7 +46,7 @@ class State:
   
   def apply_deviation(self, deviation: Deviation) -> 'State':
     self.position_deviation += deviation.position_deviation
-    self.orientation_deviation += max(deviation.forward_deviation, deviation.up_deviation)
+    self.orientation_deviation += deviation.angular_deviation
     return self
   
   def rotate(self, angle: float, axis: np.array):

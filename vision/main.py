@@ -25,6 +25,8 @@ def main():
 
   if not args.quit:
     app.run()
+  else:
+    app.close()
 
 if __name__ == '__main__':
   main()
