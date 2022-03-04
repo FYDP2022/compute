@@ -35,9 +35,6 @@ class IMUSensor:
   def close(self):
     if not self.stopped:
       self.stopped = True
-  
-  # def gyro_threshold(self, gyro):
-  #   THRESHOLD =
 
   def _runner(self):
     last_time = datetime.now()
@@ -64,8 +61,6 @@ class IMUSensor:
     delta = self.delta
     self.delta = []
     self.mutex.release()
-    if len(accel) > 0:
-      print("A: {}, G: {}".format(np.mean(accel, axis=0), np.mean(gyro, axis=0)))
     return accel, gyro, delta
   
   def calibrate(self) -> State:
@@ -92,7 +87,7 @@ class IMUSensor:
     forward = np.dot(rotation, Z_AXIS)
     up = np.dot(rotation, Y_AXIS)
     forward, up, right = normalize_basis(forward, up)
-    print("F: {}, U: {}".format(forward, up))
+    print("Forward: {}, Up: {}".format(forward, up))
     return State(forward=forward, up=up, right=right)
   
   def step(self, state: State) -> State:
@@ -118,8 +113,4 @@ class IMUSensor:
         np.dot(rotation, up)
       )
       accum_rotation = np.dot(rotation, accum_rotation)
-    
-    # print("T: {}, F: {}, N: ".format(a, g))
-    time.sleep(5)
-
     return Delta(translation, forward - state.forward, up - state.up)

@@ -20,7 +20,7 @@ import numpy as np
 import cv2 as cv
 
 from vslam.parameters import CameraParameters
-from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, normalize, pixel_ray, projection, spherical_angles, spherical_coordinates, spherical_rotation_matrix
+from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, angle_between_about, normalize, normalize_basis, pixel_ray, projection, rotate_to, spherical_angles, spherical_coordinates, spherical_rotation_matrix
 from vslam.config import CONFIG
 from vslam.segmentation import Material
 from vslam.state import Delta, State
@@ -214,7 +214,8 @@ class Feature:
   
   def delta(self, other: 'Feature', state: State) -> Delta:
     delta_forward = other.orientation_mean - self.orientation_mean
-    delta_up = np.dot(angle_axis(state.right, angle_between(state.forward, state.up)), other.orientation_mean) - state.up
+    rotation = rotate_to(state.forward, state.up)
+    delta_up = np.dot(rotation, other.orientation_mean) - np.dot(rotation, self.orientation_mean)
     return Delta(
       other.position_mean - self.position_mean,
       delta_forward,
@@ -359,6 +360,7 @@ class FeatureDatabase:
     pass
 
   def observe(self, estimate: State, delta: Delta, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
+    MAX_BBOX_DEVIATION = 0.3
     result = None
     if what is Observe.PROCESSED:
       result = ProcessedFeatures([])
@@ -367,12 +369,21 @@ class FeatureDatabase:
     probability_accum = 0.0
     n = 0
     deviation = np.linalg.norm(delta.delta_position)
+    lf = estimate.forward - delta.delta_forward
+    lu = estimate.up - delta.delta_up
+    lf, lu, lr = normalize_basis(lf, lu)
+    max_angle = np.max([
+      angle_between(estimate.forward, lf),
+      angle_between(estimate.up, lu),
+      angle_between(estimate.right, lr)
+    ])
     for feature in frame:
       transformed = feature.apply_basis(estimate)
       max_probability = 0.0
       max_feature = None
-      angular_deviation
-      intersection = [id for id in self.index.intersection(transformed.bbox(estimate.position_deviation))]
+      angular_deviation = np.linalg.norm(feature.position_mean) * max_angle
+      bbox_deviation = min(deviation + angular_deviation, MAX_BBOX_DEVIATION)
+      intersection = [id for id in self.index.intersection(transformed.bbox(bbox_deviation))]
       intersection = self.batch_select(intersection)
       for intersect in intersection:
         probability = intersect.probability(transformed)
@@ -383,7 +394,7 @@ class FeatureDatabase:
       if max_feature is not None:
         n += 1
         if what is not Observe.PROBABILITY:
-          measurement = VisualMeasurement(transformed, max_feature.delta(transformed), max_probability)
+          measurement = VisualMeasurement(transformed, max_feature.delta(transformed, estimate), max_probability)
           if what is Observe.PROCESSED:
             if max_probability >= FeatureDatabase.SIMILARITY_THRESHOLD:
               result.processed.append((transformed, max_feature, measurement))
