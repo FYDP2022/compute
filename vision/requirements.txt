@@ -8,3 +8,5 @@ scipy
 torch
 torchvision
 icm20948
+pyusb
+paho-mqtt
