@@ -530,13 +530,13 @@ class OccupancyDatabase:
     pixel = image[j + 1, i + 1]
     return pixel[0] == 255 and pixel[1] == 255 and pixel[2] == 255
   
-  def visualize(self) -> Any:
+  def visualize(self) -> Tuple[Any, float, float, float, float]:
     cur = self.connection.cursor()
     cur.execute('SELECT MIN(x), MAX(x), MIN(z), MAX(z) from occupancy')
     min_x, max_x, min_z, max_z = cur.fetchone()
     image = np.full((CONFIG.map_height, CONFIG.map_width, 3), (255, 255, 255), dtype=np.uint8)
     if min_x is None or max_x is None or min_z is None or max_z is None:
-      return image
+      return image, -10.0, 10.0, -10.0, 10.0
     else:
       delta_x = max_x - min_x
       delta_z = max_z - min_z
@@ -557,7 +557,9 @@ class OccupancyDatabase:
         )
       RADIUS = 25
       image = cv.medianBlur(image, RADIUS * 2 + 1)
-      return np.flip(image, axis=0)
+      return np.flip(image, axis=0), \
+        min_x * OccupancyDatabase.VOXEL_SIZE, max_x * OccupancyDatabase.VOXEL_SIZE, \
+        min_z * OccupancyDatabase.VOXEL_SIZE, max_z * OccupancyDatabase.VOXEL_SIZE
 
 metadata_database = MetadataDatabase()
 feature_database = FeatureDatabase()

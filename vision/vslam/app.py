@@ -1,10 +1,13 @@
 import os
+from time import sleep
 import traceback
 from typing import Any
 import cv2 as cv
 from datetime import datetime
-from vslam.sensors import IMUSensor
+import matplotlib.image as mpimg
 
+from vslam.client import MQTTClient
+from vslam.sensors import IMUSensor
 from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
@@ -21,17 +24,22 @@ class App:
 
   def __init__(self) -> 'App':
     self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
-    self.camera = StereoCamera(CONFIG.width, CONFIG.height)
-    self.sensor = IMUSensor()
-    self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
-    self.semantic = SemanticSegmentationModel()
-    self.dynamics = DynamicsModel()
-    self.slam = GradientAscentSLAM()
-    self.state = self.sensor.calibrate()
-    self.keypoint = cv.SIFT_create()
-    if DebugWindows.KEYPOINT in CONFIG.windows:
-      cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
-      cv.resizeWindow(App.KEYPOINT_WINDOW_NAME, CONFIG.width, CONFIG.height)
+    # self.camera = StereoCamera(CONFIG.width, CONFIG.height)
+    # self.sensor = IMUSensor()
+    # self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
+    # self.semantic = SemanticSegmentationModel()
+    # self.dynamics = DynamicsModel()
+    # self.slam = GradientAscentSLAM()
+    # self.state = self.sensor.calibrate()
+    # map, x1, x2, z1, z2 = occupancy_database.visualize()
+    self.mqtt = MQTTClient(0.0, 0.0, 0.0, 0.0)
+    self.mqtt.publish_battery('100')
+    sleep(5)
+    # mpimg.imsave(os.path.join(CONFIG.databasePath, 'map.png'), map)
+    # self.keypoint = cv.SIFT_create()
+    # if DebugWindows.KEYPOINT in CONFIG.windows:
+    #   cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
+    #   cv.resizeWindow(App.KEYPOINT_WINDOW_NAME, CONFIG.width, CONFIG.height)
 
   def clear(self):
     feature_database.clear()
