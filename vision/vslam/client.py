@@ -3,18 +3,22 @@
 import base64
 import math
 import os
+from queue import Queue
 from typing import Tuple
 import numpy as np
 import cv2 as cv
 import paho.mqtt.client as mqtt
 
 from vslam.config import CONFIG
-from vslam.state import State
+from vslam.serial import OnOffCommand, RelayCommand, SerialInterface
+from vslam.state import AppState, State
 from vslam.utils import Y_AXIS, Z_AXIS, angle_between_about, normalize
 
 class MQTTClient(mqtt.Client):
-  def __init__(self, map_x1: float, map_x2: float, map_z1: float, map_z2: float) -> 'MQTTClient':
+  def __init__(self, state: AppState, map_x1: float, map_x2: float, map_z1: float, map_z2: float) -> 'MQTTClient':
     super().__init__()
+    self.app_state = state
+    self.serial = None
     self.map_x1 = map_x1
     self.map_x2 = map_x2
     self.map_z1 = map_z1
@@ -22,6 +26,9 @@ class MQTTClient(mqtt.Client):
     self.connect("localhost", 1883, 5)
     self.subscribe("StartStopTopic", 2)
     self.loop_start()
+  
+  def initialize(self, serial: SerialInterface):
+    self.serial = serial
   
   def on_connect(self, mqttc, obj, flags, rc):
     print("rc: " + str(rc))
@@ -36,6 +43,8 @@ class MQTTClient(mqtt.Client):
       incoming = str(msg.payload.decode("utf-8"))
       if incoming == "START":
         #ADD LAWNY STARTING CODE HERE
+        self.serial.write_message(RelayCommand('ON'))
+        self.app_state.active = True
         print("Lawny Started message received - Execution started")
       elif incoming == "STOP":
         #ADD LAWNY STOPPING CODE (BEFORE MQTT DISCONNECT, AND CHECK IF SENT BEFORE DISCONNECTION OCCURS)

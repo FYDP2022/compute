@@ -1,5 +1,9 @@
-from enum import Flag, unique
+from enum import Enum, Flag, unique
 from typing import Optional
+
+class AppMode(Enum):
+  FOLLOW = 0,
+  BLADE = 1
 
 @unique
 class DebugWindows(Flag):
@@ -34,6 +38,7 @@ class DebugWindows(Flag):
 class Config:
   def __init__(
     self,
+    mode: AppMode = AppMode.FOLLOW,
     debug: bool = True,
     interval: float = 5.0,
     windows: DebugWindows = DebugWindows.NONE,
@@ -44,6 +49,7 @@ class Config:
     map_width: int = 460,
     map_height: int = 634
   ) -> 'Config':
+    self.mode = mode
     self.debug = debug
     self.interval = interval
     self.windows = windows
