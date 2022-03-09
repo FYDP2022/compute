@@ -6,8 +6,6 @@ from typing import Optional, Union
 import usb.core
 import usb.util
 
-from vslam.client import MQTTClient
-
 class SerialValueException(ValueError):
   pass
 
@@ -143,9 +141,9 @@ class ReadSerialCommandController():
       raise SerialValueException("INVALID INCOMING MESSAGE PURPOSE (NOT ERROR OR SENSOR_DATA)")
 
 class SerialInterface:  
-  def __init__(self, client: MQTTClient) -> 'SerialInterface':
+  def __init__(self, client) -> 'SerialInterface':
     self.client = client
-    self.device: usb.core.Device = usb.core.find(idVendor=0x2341) # Vendor: Arduino SA
+    self.device: usb.core.Device = usb.core.find(idVendor=0x1A86, idProduct=0x7523) # Vendor: Arduino SA
     self.endpoint: Optional[usb.core.Endpoint] = None
     self.read_controller = ReadSerialCommandController()
     if self.device is not None:

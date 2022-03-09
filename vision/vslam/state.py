@@ -62,7 +62,6 @@ class ControlState:
   action: ControlAction = ControlAction.NONE
   value: Any = None
 
-# @dataclass
-# class Measurement:
-#   visual_measurements: List[VisualMeasurement] = []
-#   sensor_measurement: SensorMeasurement = Delta()
+@dataclass
+class AppState:
+  active: bool = True
