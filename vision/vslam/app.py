@@ -24,22 +24,22 @@ class App:
 
   def __init__(self) -> 'App':
     self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
-    # self.camera = StereoCamera(CONFIG.width, CONFIG.height)
-    # self.sensor = IMUSensor()
-    # self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
-    # self.semantic = SemanticSegmentationModel()
-    # self.dynamics = DynamicsModel()
-    # self.slam = GradientAscentSLAM()
-    # self.state = self.sensor.calibrate()
-    # map, x1, x2, z1, z2 = occupancy_database.visualize()
-    self.mqtt = MQTTClient(0.0, 0.0, 0.0, 0.0)
-    self.mqtt.publish_battery('100')
-    sleep(5)
-    # mpimg.imsave(os.path.join(CONFIG.databasePath, 'map.png'), map)
-    # self.keypoint = cv.SIFT_create()
-    # if DebugWindows.KEYPOINT in CONFIG.windows:
-    #   cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
-    #   cv.resizeWindow(App.KEYPOINT_WINDOW_NAME, CONFIG.width, CONFIG.height)
+    self.camera = StereoCamera(CONFIG.width, CONFIG.height)
+    self.sensor = IMUSensor()
+    self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
+    self.semantic = SemanticSegmentationModel()
+    self.dynamics = DynamicsModel()
+    self.slam = GradientAscentSLAM()
+    self.state = self.sensor.calibrate()
+    map, x1, x2, z1, z2 = occupancy_database.visualize()
+    mpimg.imsave(os.path.join(CONFIG.databasePath, 'map.png'), map)
+    self.mqtt = MQTTClient(x1, x2, z1, z2)
+    self.mqtt.publish_image()
+    self.mqtt.update_map_state(self.state)
+    self.keypoint = cv.SIFT_create()
+    if DebugWindows.KEYPOINT in CONFIG.windows:
+      cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
+      cv.resizeWindow(App.KEYPOINT_WINDOW_NAME, CONFIG.width, CONFIG.height)
 
   def clear(self):
     feature_database.clear()
@@ -89,6 +89,7 @@ class App:
         feature_database.apply_features(processed)
         occupancy_database.apply_voxels(image, points3d, disparity, estimate)
         self.state = estimate
+        self.mqtt.update_map_state(self.state)
         print(self.state)
         # Timing & metrics
         delta = (current_time - last_time).total_seconds()
