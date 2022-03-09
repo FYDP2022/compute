@@ -10,7 +10,7 @@ import cv2 as cv
 import paho.mqtt.client as mqtt
 
 from vslam.config import CONFIG
-from vslam.serial import OnOffCommand, RelayCommand, SerialInterface
+from vslam.arduino import OnOffCommand, RelayCommand, SerialInterface
 from vslam.state import AppState, State
 from vslam.utils import Y_AXIS, Z_AXIS, angle_between_about, normalize
 

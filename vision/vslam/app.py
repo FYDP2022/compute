@@ -8,7 +8,7 @@ import matplotlib.image as mpimg
 
 from vslam.client import MQTTClient
 from vslam.sensors import IMUSensor
-from vslam.serial import BladeMotorCommand, OnOffCommand, SerialInterface
+from vslam.arduino import BladeMotorCommand, OnOffCommand, SerialInterface
 from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel

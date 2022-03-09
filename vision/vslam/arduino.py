@@ -3,8 +3,7 @@ from logging import exception
 from queue import Queue
 import threading
 from typing import Optional, Union
-import usb.core
-import usb.util
+import serial
 
 class SerialValueException(ValueError):
   pass
@@ -143,21 +142,17 @@ class ReadSerialCommandController():
 class SerialInterface:  
   def __init__(self, client) -> 'SerialInterface':
     self.client = client
-    self.device: usb.core.Device = usb.core.find(idVendor=0x1A86, idProduct=0x7523) # Vendor: Arduino SA
-    self.endpoint: Optional[usb.core.Endpoint] = None
     self.read_controller = ReadSerialCommandController()
+    try:
+      self.device = serial.Serial(port='/dev/ttyUSB0', baudrate=115200)
+      print('[Serial] Connection established...')
+    except Exception as e:
+      print("[Serial] ERROR: {}".format(e))
+      self.device = None
+    
     if self.device is not None:
-      self.device.set_configuration()
-      cfg = self.device.get_configuration()
-      intf = cfg[(0, 0)]
-      self.endpoint = usb.util.find_descriptor(
-        intf,
-        # match the first OUT endpoint
-        custom_match = lambda e:
-          usb.util.endpoint_direction(e.bEndpointAddress) ==
-          usb.util.ENDPOINT_OUT
-      )
       self.thread = threading.Thread(target=self._runner)
+      self.thread.start()
   
   def _runner(self):
     while True:
@@ -177,9 +172,9 @@ class SerialInterface:
         print("[Serial] ERROR: {}".format(e))
 
   def recv_message(self) -> Union[IncomingErrorMessage, IncomingSensorReading]:
-    payload = self.device.read(0x81, [])
-    # Are we reading until the \n character and is this a blocking or non-blocking read?
-    return self.read_controller.return_incoming_message_struct(''.join([chr(x) for x in payload]))
+    line = self.device.readline().decode('utf-8')
+    print(line)
+    return self.read_controller.return_incoming_message_struct(line)
   
   def write_message(self, command: WriteSerialCommandInterface):
-    self.endpoint.write(command.provide_command())
+    self.device.write(command.provide_command())
