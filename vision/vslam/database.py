@@ -7,6 +7,7 @@ import math
 import queue
 import random
 import os
+import signal
 from rtree import index
 import sqlite3
 import statistics
@@ -318,6 +319,11 @@ class FeatureDatabase:
     cur.execute('SELECT MAX(id) FROM features')
     row = cur.fetchone()
     self.id_counter = row[0] if row[0] is not None else 1
+    signal.signal(signal.SIGINT, self._signalHandler)
+
+  def _signalHandler(self, sig, frame):
+    self.index.rtree.flush()
+    self.index = None
   
   def initialize(self):
     self.index = SpatialIndex()
@@ -535,7 +541,8 @@ class OccupancyDatabase:
     cur.execute('SELECT MIN(x), MAX(x), MIN(z), MAX(z) from occupancy')
     min_x, max_x, min_z, max_z = cur.fetchone()
     image = np.full((CONFIG.map_height, CONFIG.map_width, 3), (255, 255, 255), dtype=np.uint8)
-    if min_x is None or max_x is None or min_z is None or max_z is None:
+    if min_x is None or max_x is None or min_z is None or max_z is None \
+      or max_z - min_z < 1 or max_x - min_x < 1:
       return image, -10.0, 10.0, -10.0, 10.0
     else:
       delta_x = max_x - min_x
