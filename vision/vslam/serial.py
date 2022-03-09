@@ -6,6 +6,8 @@ from typing import Optional, Union
 import usb.core
 import usb.util
 
+from vslam.client import MQTTClient
+
 class SerialValueException(ValueError):
   pass
 
@@ -104,6 +106,8 @@ class IncomingSensorReading():
       self.generate_ultrasonic_struct(direction=info_1, distance=info_2)
     elif module == "TEMPERATURE":
       self.generate_temperature_struct(probe=info_1, temperature=info_2)
+    elif module == "GYRO":
+      self.generate_gyro_struct(tilt=info_2)
     else:
       raise ValueError("Invalid module for incoming sensor reading")
     
@@ -118,6 +122,11 @@ class IncomingSensorReading():
     self.module = "TEMPERATURE"
     self.probe = probe
     self.temperature = temperature
+  
+  def generate_gyro_struct(self, tilt: str):
+    self.incoming_desig = "SENSOR_DATA"
+    self.module = "GYRO"
+    self.tilt = tilt
 
 class ReadSerialCommandController():
   def return_incoming_message_struct(self, incoming_msg: str) -> Union[IncomingErrorMessage, IncomingSensorReading]:
@@ -131,13 +140,13 @@ class ReadSerialCommandController():
     elif msg_purpose == "SENSOR_DATA":
       return IncomingSensorReading(module=tokens[1], info_1=tokens[2], info_2=tokens[3])
     else:
-      raise ValueError("INVALID INCOMING MESSAGE PURPOSE (NOT ERROR OR SENSOR_DATA)")
+      raise SerialValueException("INVALID INCOMING MESSAGE PURPOSE (NOT ERROR OR SENSOR_DATA)")
 
 class SerialInterface:  
-  def __init__(self) -> 'SerialInterface':
+  def __init__(self, client: MQTTClient) -> 'SerialInterface':
+    self.client = client
     self.device: usb.core.Device = usb.core.find(idVendor=0x2341) # Vendor: Arduino SA
     self.endpoint: Optional[usb.core.Endpoint] = None
-    self.queue = Queue(1000)
     self.read_controller = ReadSerialCommandController()
     if self.device is not None:
       self.device.set_configuration()
@@ -151,14 +160,23 @@ class SerialInterface:
           usb.util.ENDPOINT_OUT
       )
       self.thread = threading.Thread(target=self._runner)
-    
   
   def _runner(self):
     while True:
       try:
-        self.queue.put(self.recv_message())
+        msg = self.recv_message()
+        if msg is not None:
+          if msg.incoming_desig == 'ERROR':
+            pass
+          elif msg.incoming_desig == 'SENSOR_DATA':
+            if msg.module == 'ULTRASONIC':
+              self.client.publish_ultrasonic(msg.direction, msg.distance)
+            elif msg.module == 'TEMPERATURE':
+              self.client.publish_temperature(msg.probe, msg.temperature)
+            elif msg.module == 'GYRO':
+              self.client.publish_gyro(msg.tilt)
       except SerialValueException as e:
-        pass
+        print("[Serial] ERROR: {}".format(e))
 
   def recv_message(self) -> Union[IncomingErrorMessage, IncomingSensorReading]:
     payload = self.device.read(0x81, [])

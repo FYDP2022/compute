@@ -57,6 +57,10 @@ class MQTTClient(mqtt.Client):
   def publish_ultrasonic(self, direction: str, distance: str):
     send_msg = direction + ":" + distance
     self.publish("UltrasonicTopic", send_msg, qos=2)
+  
+  def publish_gyro(self, tilt: str):
+    send_msg = "tilt:" + tilt
+    self.publish("GyroTopic", send_msg, qos=2)
 
   def publish_battery(self, battery: str):
     self.publish("BatteryTopic", battery, qos=2)

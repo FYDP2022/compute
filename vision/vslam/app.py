@@ -8,6 +8,7 @@ import matplotlib.image as mpimg
 
 from vslam.client import MQTTClient
 from vslam.sensors import IMUSensor
+from vslam.serial import SerialInterface
 from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
 from vslam.segmentation import SemanticSegmentationModel
@@ -34,6 +35,7 @@ class App:
     map, x1, x2, z1, z2 = occupancy_database.visualize()
     mpimg.imsave(os.path.join(CONFIG.databasePath, 'map.png'), map)
     self.mqtt = MQTTClient(x1, x2, z1, z2)
+    self.serial = SerialInterface(self.mqtt)
     self.mqtt.publish_image()
     self.mqtt.update_map_state(self.state)
     self.keypoint = cv.SIFT_create()
