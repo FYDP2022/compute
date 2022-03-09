@@ -42,7 +42,7 @@ class IMUSensor:
       ax, ay, az, gx, gy, gz = self.imu.read_accelerometer_gyro_data()
       current_time = datetime.now()
       self.mutex.acquire()
-      self.accel.append(-np.asarray([ax, ay, az]) - self.accel_bias)
+      self.accel.append(-np.asarray([ax, -ay, az]) - self.accel_bias)
       # Negate for CCW rotations
       self.gyro.append(np.radians(np.asarray([gx, gy, gz])) - self.gyro_bias)
       self.delta.append((current_time - last_time).total_seconds())
