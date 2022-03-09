@@ -59,29 +59,31 @@ class Feature:
     SIZE_THRESHOLD = 4.0 # 4pixel diameter
     RADIUS_THRESHOLD = 0.05 # 5cm
     x, y = round(kp.pt[0]), round(kp.pt[1])
-    window_size = math.ceil(kp.size / 2.0)
+    window_radius = math.ceil(kp.size / 2.0)
     if kp.size < SIZE_THRESHOLD:
       return None
     color = np.asarray((0, 0, 0))
     n = 0.0
     depth = []
-    for j in range(y - window_size, y + window_size):
-      for i in range(x - window_size, x + window_size):
-        if i < CONFIG.width and j < CONFIG.height and math.sqrt((i - x) ** 2 + (j - y) ** 2) <= window_size:
-          n += 1.0
-          color = color * (n - 1) / n + np.asarray(image[j, i]) / n
-          if disparity[j, i] > THRESHOLD and not isinf(disparity[j, i]):
-            depth.append(float(points3d[j, i][2] / 1000.0)) # Q matrix was computed using mm
-
-    if len(depth) < 2:
+    # circle = cv.circle(np.zeros((2 * circle_radius, 2 * circle_radius)), (x, y), circle_radius, 1, thickness=-1)
+    # masked = np.ma.array(depth, )
+    xbox = np.clip([x - window_radius - 1, x + window_radius], 0, CONFIG.width - 1)
+    ybox = np.clip([y - window_radius - 1, y + window_radius], 0, CONFIG.width - 1)
+    imagebox = image[xbox[0]:xbox[1], ybox[0]:ybox[1]]
+    if imagebox.size < 2:
       return None
-
-    median_depth = statistics.median(depth)
+    color = np.mean(imagebox, axis=(0, 1))
+    box = points3d[xbox[0]:xbox[1], ybox[0]:ybox[1], 2] / 1000.0 # Q matrix was computed using mm
+    median_depth = np.median(box)
+    box[box == np.inf] = median_depth
+    stddev_depth = np.std(box)
     radius = math.tan(math.radians(CameraParameters.FOVX) * (kp.size / 2.0) / CONFIG.width) * median_depth
+    if np.isnan(median_depth) or np.isnan(stddev_depth) or np.isnan(color).any():
+      return None
     if radius < RADIUS_THRESHOLD:
       return None
     v = pixel_ray(Z_AXIS, kp.pt[0], kp.pt[1])
-    deviation = statistics.stdev(depth) + radius
+    deviation = stddev_depth + radius
     
     return Feature(
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
@@ -319,9 +321,8 @@ class FeatureDatabase:
     cur.execute('SELECT MAX(id) FROM features')
     row = cur.fetchone()
     self.id_counter = row[0] if row[0] is not None else 1
-    signal.signal(signal.SIGINT, self._signalHandler)
 
-  def _signalHandler(self, sig, frame):
+  def close(self):
     self.index.rtree.flush()
     self.index = None
   
@@ -474,7 +475,7 @@ class OccupancyDatabase:
   
   def apply_voxels(self, image: Any, points3d: Any, disparity, state: State):
     THRESHOLD = 5
-    SAMPLES = 1000
+    SAMPLES = 500
     cur = self.connection.cursor()
     angle = angle_between(state.forward, Z_AXIS)
     axis = np.cross(state.forward, Z_AXIS)
@@ -547,8 +548,8 @@ class OccupancyDatabase:
     else:
       delta_x = max_x - min_x
       delta_z = max_z - min_z
-      x_skip = int(math.floor(CONFIG.map_width / delta_x))
-      z_skip = int(math.floor(CONFIG.map_height / delta_z))
+      x_skip = int(math.ceil(CONFIG.map_width / delta_x))
+      z_skip = int(math.ceil(CONFIG.map_height / delta_z))
       for row in cur.execute('SELECT * FROM occupancy'):
         voxel = Voxel.from_row(row)
         x1 = (voxel.position[0] - min_x) / delta_x

@@ -5,6 +5,7 @@ from typing import Any
 import cv2 as cv
 from datetime import datetime
 import matplotlib.image as mpimg
+import numpy as np
 
 from vslam.client import MQTTClient
 from vslam.sensors import IMUSensor
@@ -62,6 +63,7 @@ class App:
         n = 0
         last_time = datetime.now()
         current_time = datetime.now()
+        last_probability = 0.0
         while True:
           metrics = accum >= CONFIG.interval
           if metrics:
@@ -79,16 +81,19 @@ class App:
           sensor_delta, sensor_deviation = self.sensor.step(self.state)
           estimate = self.state.apply_delta(sensor_delta)
           kp = self.keypoint.detect(grayL)
+          kp = sorted(kp, key=lambda x: x.size)
+          samples = min(20, len(kp))
+          kp = kp[-samples:]
           if DebugWindows.KEYPOINT in CONFIG.windows:
             display = cv.drawKeypoints(grayL, kp, image.copy(), flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
             cv.imshow(App.KEYPOINT_WINDOW_NAME, display)
           points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
           features = [Feature.create(k, image, points3d, disparity) for k in kp]
           features = [f for f in features if f]
-          vision_delta, probability, deviation = self.slam.step(estimate, sensor_deviation, features)
+          vision_delta, probability, deviation = self.slam.step(estimate, sensor_deviation, features, last_probability)
           estimate = estimate.apply_delta(vision_delta)
           estimate = estimate.apply_deviation(deviation)
-          processed, probability = feature_database.observe(estimate, sensor_deviation, features, Observe.PROCESSED)
+          processed, last_probability = feature_database.observe(estimate, sensor_deviation, features, Observe.PROCESSED)
           feature_database.apply_features(processed)
           occupancy_database.apply_voxels(image, points3d, disparity, estimate)
           self.state = estimate
@@ -117,5 +122,6 @@ class App:
   
   def close(self):
     self.serial.write_message(BladeMotorCommand('OFF'))
+    feature_database.close()
     self.sensor.close()
     self.camera.close()
