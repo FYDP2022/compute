@@ -55,10 +55,8 @@ class App:
   def run(self):
     feature_database.initialize()
     try:
+      self.serial.write_message(BladeMotorCommand('OFF'))
       if CONFIG.mode == AppMode.FOLLOW:
-        # test = feature_database.batch_select([6, 7])
-        # print(test[0].probability(test[1], self.state))
-        # raise RuntimeError()
         accum = 0.0
         framerate = 0.0
         n = 0
@@ -105,11 +103,13 @@ class App:
           current_time = datetime.now()
           cv.waitKey(30)
       elif CONFIG.mode == AppMode.BLADE:
-        last = None
-        # while True:
-        #   if last ==
-        # self.serial.write_message(BladeMotorCommand('ON'))
-        # while True:
+        last = self.app_state.active
+        while True:
+          if last != self.app_state.active:
+            if self.app_state.active:
+              self.serial.write_message(BladeMotorCommand('ON'))
+            else:
+              self.serial.write_message(BladeMotorCommand('OFF'))
     except Exception as e:
       print('ERROR: {}'.format(e))
       print(traceback.format_exc())
