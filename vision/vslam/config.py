@@ -27,6 +27,8 @@ class DebugWindows(Flag):
       result = result | DebugWindows.DEPTH
     if 'keypoint' in split:
       result = result | DebugWindows.KEYPOINT
+    if 'semantic' in split:
+      result = result | DebugWindows.SEMANTIC
     if 'all' in split:
       return DebugWindows.ALL
     return result
