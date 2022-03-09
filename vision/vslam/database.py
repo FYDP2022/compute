@@ -4,7 +4,12 @@ from enum import Enum, unique
 import json
 import math
 import os
+<<<<<<< Updated upstream
 from pickletools import floatnl
+=======
+
+from cv2 import FarnebackOpticalFlow
+>>>>>>> Stashed changes
 from rtree import index
 import sqlite3
 import statistics
@@ -173,7 +178,7 @@ class Feature:
     assert other.n == 1
     n = self.n + 1
     color = self.incremental_mean(self.color, other.color, n)
-    return Feature(
+    return Feature( 
       id=self.id,
       color=np.asarray((math.floor(color[0]), math.floor(color[1]), math.floor(color[2]))),
       n=n,
@@ -345,7 +350,26 @@ class FeatureDatabase:
     # Robot is lost -> correlate feature frame to environment to determine starting location
     # Perform graph based probability search:
     # * Find a feature with similar properties to current feature than guess the estimate as the exact delta to this feature
-    pass
+    num_features = len(frame)
+    cur = self.connection.cursor()
+    origin_sum = np.array([0,0,0])
+    up_sum = np.array([0,0,0])
+    forward_sum = np.array([0,0,0])
+    for feature in frame:
+      cur.execute('SELECT MIN(SQRT(SQUARE(color_r - {})) + SQUARE(color_b - {}) + SQUARE(color_g - {}) * SQRT(SQUARE(radius_mean - {}))) FROM features'.format(feature.color[0], feature.color[1], feature.color[2], feature.radius_mean))
+      db_feature = cur.fetchone()
+      m = rotate_to(db_feature.orientation_mean, feature.orientation_mean)
+      origin = db_feature.position_mean - np.dot(m, feature.position_mean)
+      zHat = origin[2]
+      yHat = origin[1]
+      origin_sum =+ origin
+      forward_sum += np.dot(m, zHat)
+      up_sum += np.dot(m, yHat)
+    
+    position = origin_sum / num_features
+    forward = forward_sum / num_features
+    up = up_sum / num_features
+    return State(position=position, forward=forward, up=up)
 
   def observe(self, estimate: State, frame: List[Feature], what = Observe.PROBABILITY) -> Tuple[ObserveResult, float]:
     result = None
