@@ -177,4 +177,5 @@ class SerialInterface:
     return self.read_controller.return_incoming_message_struct(line)
   
   def write_message(self, command: WriteSerialCommandInterface):
-    self.device.write(command.provide_command())
+    if self.device is not None:
+      self.device.write(command.provide_command())

@@ -64,4 +64,4 @@ class ControlState:
 
 @dataclass
 class AppState:
-  active: bool = True
+  active: bool = False
