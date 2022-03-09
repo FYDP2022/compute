@@ -49,6 +49,8 @@ class GradientAscentSLAM(SLAM):
     # Apply Gradient Ascent on visual measurement probability by computing derivatives
     # using the fundamental theorem of calculus
     delta = Delta()
+    if last_probability == 0.0:
+      return delta, 0.0, Deviation()
     lr = LR
     for _ in range(n):
       if last_probability > PROBABILITY_THRESHOLD:
