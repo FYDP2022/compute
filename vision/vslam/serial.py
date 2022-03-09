@@ -6,6 +6,9 @@ from typing import Optional, Union
 import usb.core
 import usb.util
 
+class SerialValueException(ValueError):
+  pass
+
 class WriteSerialCommandInterface(ABC):
   output_serial_string = ""
   module_name = ""
@@ -37,7 +40,7 @@ class DriveMotorCommand(WriteSerialCommandInterface):
       "FWD_LEFT", "FWD_RIGHT", "BWD_LEFT", "BWD_RIGHT"
     ]
     if direction.upper() not in valid_direction_list:
-      self.invalid_command_error_msg("direction")
+      return "INVALID"
     else:
       return direction.upper()
     
@@ -45,13 +48,13 @@ class DriveMotorCommand(WriteSerialCommandInterface):
     if self.check_num_valid_boundaries(bias, 0, 100):
       return bias
     else:
-      self.invalid_command_error_msg("bias")
+      return 0
       
   def check_return_distance(self, distance: int):
     if self.check_num_valid_boundaries(distance, -10000, 10000):
       return distance
     else:
-      self.invalid_command_error_msg("distance")
+      return 1000
     
   def build_serial_command(self, direction, bias, distance):
     self.output_serial_string += "D:"
@@ -152,10 +155,14 @@ class SerialInterface:
   
   def _runner(self):
     while True:
-      self.queue.put(self.recv_message())
+      try:
+        self.queue.put(self.recv_message())
+      except SerialValueException as e:
+        pass
 
   def recv_message(self) -> Union[IncomingErrorMessage, IncomingSensorReading]:
     payload = self.device.read(0x81, [])
+    # Are we reading until the \n character and is this a blocking or non-blocking read?
     return self.read_controller.return_incoming_message_struct(''.join([chr(x) for x in payload]))
   
   def write_message(self, command: WriteSerialCommandInterface):
