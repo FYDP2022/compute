@@ -12,7 +12,7 @@ class DebugWindows(Flag):
   REMAP = 2
   DEPTH = 4
   KEYPOINT = 8
-  SEMANTIC = 16
+  CONTROL = 16
   ALL = 31
 
   def __contains__(self, item: 'DebugWindows'):
@@ -31,8 +31,8 @@ class DebugWindows(Flag):
       result = result | DebugWindows.DEPTH
     if 'keypoint' in split:
       result = result | DebugWindows.KEYPOINT
-    if 'semantic' in split:
-      result = result | DebugWindows.SEMANTIC
+    if 'control' in split:
+      result = result | DebugWindows.CONTROL
     if 'all' in split:
       return DebugWindows.ALL
     return result

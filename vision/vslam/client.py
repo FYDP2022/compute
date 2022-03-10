@@ -30,6 +30,12 @@ class MQTTClient(mqtt.Client):
   def initialize(self, serial: SerialInterface):
     self.serial = serial
   
+  def update_bbox(self, map_x1: float, map_x2: float, map_z1: float, map_z2: float):
+    self.map_x1 = map_x1
+    self.map_x2 = map_x2
+    self.map_z1 = map_z1
+    self.map_z2 = map_z2
+  
   def on_connect(self, mqttc, obj, flags, rc):
     print("rc: " + str(rc))
 

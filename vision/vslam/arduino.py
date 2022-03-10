@@ -57,7 +57,7 @@ class DriveMotorCommand(WriteSerialCommandInterface):
     
   def build_serial_command(self, direction, bias, distance):
     self.output_serial_string += "D:"
-    self.output_serial_string += self.check_return_direction(direction) + ":"
+    self.output_serial_string += self.check_return_direction(direction) + ":30:"
     self.output_serial_string += str(self.check_return_bias(bias)) + ":"
     self.output_serial_string += str(self.check_return_distance(distance))
 

@@ -38,6 +38,7 @@ class StereoCamera:
     self.t2.start()
     self.handler = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, self._signalHandler)
+    time.sleep(2)
     if DebugWindows.CAMERA in CONFIG.windows:
       cv.namedWindow(StereoCamera.LEFT_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(StereoCamera.LEFT_WINDOW_NAME, self.width, self.height)
@@ -105,6 +106,8 @@ class StereoCamera:
   def _getFrame(self):
     while True:
       self.mutex.acquire()
+      if self.stopped:
+        raise RuntimeError('Tried to read closed camera')
       if self.ready[CameraIndex.LEFT] == self.ready[CameraIndex.RIGHT] and not self.queue[CameraIndex.LEFT].empty():
         break
       self.mutex.release()
