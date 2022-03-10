@@ -4,12 +4,9 @@ from enum import Enum, unique
 import json
 import math
 import os
-<<<<<<< Updated upstream
 from pickletools import floatnl
-=======
 
 from cv2 import FarnebackOpticalFlow
->>>>>>> Stashed changes
 from rtree import index
 import sqlite3
 import statistics
