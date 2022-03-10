@@ -35,26 +35,22 @@ class GradientAscentSLAM(SLAM):
   def __init__(self) -> 'SLAM':
     super().__init__()
 
-  def step(self, estimate: State, deviation: Deviation, frame: List[Feature]) -> Tuple[Delta, float, Deviation]:
+  def step(self, estimate: State, deviation: Deviation, frame: List[Feature], last_probability: float, n: int = 1) -> Tuple[Delta, float, Deviation]:
     RESOLUTION_POSITION = 0.05 # 5cm
     RESOLUTION_ANGLE = math.radians(5) # 5degree
-    MAX_ITERATIONS = 5
-    SAMPLES = 1000
-    DECAY = float(MAX_ITERATIONS - 1) / float(MAX_ITERATIONS)
+    SAMPLES = 30
     PROBABILITY_THRESHOLD = 0.95
     LR = 0.01
+
+    decay = float(n - 1) / float(n)
 
     samples = min(SAMPLES, len(frame))
 
     # Apply Gradient Ascent on visual measurement probability by computing derivatives
     # using the fundamental theorem of calculus
     delta = Delta()
-    _, last_probability = feature_database.observe(estimate, deviation, np.random.choice(frame, samples, False))
-    print(last_probability)
-    if last_probability == 0.0:
-      return delta, 0.0, Deviation()
     lr = LR
-    for _ in range(MAX_ITERATIONS):
+    for _ in range(n):
       if last_probability > PROBABILITY_THRESHOLD:
         break
       position_gradient = []
@@ -94,7 +90,7 @@ class GradientAscentSLAM(SLAM):
       _, probability = feature_database.observe(estimate.apply_delta(next), deviation, np.random.choice(frame, samples, False))
       last_probability = probability
       delta = next
-      lr *= DECAY
+      lr *= decay
       print(last_probability)
     return delta, last_probability, deviation
 
