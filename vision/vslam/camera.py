@@ -4,20 +4,21 @@ import signal
 import threading
 from typing import Any, List, Tuple
 import cv2 as cv
+import time
 
 from vslam.config import CONFIG, DebugWindows
 
 class CameraIndex(IntEnum):
-  RIGHT = 0
-  LEFT = 1
+  LEFT = 0
+  RIGHT = 1
 
 class StereoCamera:
   """Streams data from binocular camera sensor"""
 
   LEFT_WINDOW_NAME = 'CAMERA.LEFT'
   RIGHT_WINDOW_NAME = 'CAMERA.RIGHT'
-  WIDTH = 1920
-  HEIGHT = 1080
+  WIDTH = 1280
+  HEIGHT = 720
 
   def __init__(self, width: int, height: int) -> 'StereoCamera':
     self.width = width
@@ -26,13 +27,9 @@ class StereoCamera:
     self.stopped = False
     self.queue = (queue.Queue(), queue.Queue())
     self.barrier = threading.Barrier(2)
+    self.mutex = threading.Lock()
+    self.ready = [0, 0]
     self.capture: List[cv.VideoCapture] = [None, None]
-    self.capture[CameraIndex.LEFT] = cv.VideoCapture(self._cameraString(CameraIndex.LEFT))
-    self.capture[CameraIndex.RIGHT] = cv.VideoCapture(self._cameraString(CameraIndex.RIGHT))
-    if not self.capture[CameraIndex.LEFT].isOpened():
-      raise RuntimeError('failed to capture data from left camera')
-    if not self.capture[CameraIndex.RIGHT].isOpened():
-      raise RuntimeError('failed to capture data from right camera')
     self.t1 = threading.Thread(target=self._reader, args=[CameraIndex.LEFT])
     self.t1.daemon = True
     self.t1.start()
@@ -59,21 +56,27 @@ class StereoCamera:
     signal.signal(signal.SIGINT, self.handler)
 
   def _reader(self, camera: CameraIndex):
+    self.capture[camera] = cv.VideoCapture(self._cameraString(camera))
+    if not self.capture[camera].isOpened():
+      raise RuntimeError('failed to capture data from camera')
     try:
       while not self.stopped:
-        ret, frame = self.capture[camera].read()
         self.barrier.wait()
+        ret, frame = self.capture[camera].read()
         if self.stopped:
           break
         if not ret:
           raise RuntimeError('failed to read camera sensor: {}'.format(camera))
+        self.mutex.acquire()
         if not self.queue[camera].empty():
           try:
             # discard previous (unprocessed) frame
             self.queue[camera].get_nowait()
           except queue.Empty:
             pass
-        self.queue[camera].put(frame)
+        self.queue[camera].put(cv.flip(frame, -1))
+        self.ready[camera] += 1
+        self.mutex.release()
     except threading.BrokenBarrierError:
       pass
 
@@ -100,10 +103,17 @@ class StereoCamera:
     self.reverse = not self.reverse
 
   def _getFrame(self):
+    while True:
+      self.mutex.acquire()
+      if self.ready[CameraIndex.LEFT] == self.ready[CameraIndex.RIGHT] and not self.queue[CameraIndex.LEFT].empty():
+        break
+      self.mutex.release()
+      time.sleep(30 / 1000.0)
+    result = (self.queue[CameraIndex.LEFT].get_nowait(), self.queue[CameraIndex.RIGHT].get_nowait())
     if self.reverse:
-      return (self.queue[CameraIndex.RIGHT].get(), self.queue[CameraIndex.LEFT].get())
-    else:
-      return (self.queue[CameraIndex.LEFT].get(), self.queue[CameraIndex.RIGHT].get())
+      result = (result[1], result[0])
+    self.mutex.release()
+    return result
   
   def read(self) -> Tuple[Any, Any]:
     left, right = self._getFrame()
