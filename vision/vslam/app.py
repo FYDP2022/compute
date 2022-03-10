@@ -3,13 +3,10 @@ from time import sleep
 import traceback
 from typing import Any
 import cv2 as cv
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from datetime import datetime
 import matplotlib.image as mpimg
 import numpy as np
-use_cuda = torch.cuda.is_available()
+from vslam.control import FollowControl
 from vslam.sensors import IMUSensor
 
 from vslam.client import MQTTClient
@@ -17,7 +14,6 @@ from vslam.sensors import IMUSensor
 from vslam.arduino import BladeMotorCommand, OnOffCommand, SerialInterface
 from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
-from vslam.semantic import SemanticSegmenation, Net
 from vslam.parameters import CalibrationParameters
 from vslam.database import Feature, Observe, feature_database, occupancy_database
 from vslam.config import CONFIG, AppMode, DebugWindows
@@ -28,18 +24,10 @@ from vslam.utils import normalize, spherical_rotation_matrix
 
 class App:
   KEYPOINT_WINDOW_NAME = 'KEYPOINT'
-  SEMANTIC_WINDOW_NAME = 'SEMANTIC'
 
   def __init__(self) -> 'App':
     self.params = CalibrationParameters.load(os.path.join(CONFIG.dataPath, 'calibration'))
     self.camera = StereoCamera(CONFIG.width, CONFIG.height)
-    self.semanticSegmentation = SemanticSegmenation()
-    model_path = os.path.abspath(os.path.join(os.path.dirname('main.py'), 'semantic', 'checkpoint_test.tar'))
-    self.semantic = Net()
-    device =  torch.device("cuda" if use_cuda else "cpu")
-    model = torch.load(model_path)
-    self.trained_model = model['model']
-    self.trained_model = self.trained_model.to(device).eval()
     self.sensor = IMUSensor()
     self.depth = DepthEstimator(CONFIG.width, CONFIG.height, self.params)
     self.dynamics = DynamicsModel()
@@ -51,15 +39,12 @@ class App:
     self.mqtt = MQTTClient(self.app_state, x1, x2, z1, z2)
     self.serial = SerialInterface(self.mqtt)
     self.mqtt.initialize(self.serial)
-    self.mqtt.publish_image()
-    self.mqtt.update_map_state(self.state)
+    self.map_sent = False
     self.keypoint = cv.SIFT_create()
+    self.control = FollowControl()
     if DebugWindows.KEYPOINT in CONFIG.windows:
       cv.namedWindow(App.KEYPOINT_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(App.KEYPOINT_WINDOW_NAME, CONFIG.width, CONFIG.height)
-    if DebugWindows.SEMANTIC in CONFIG.windows:
-      cv.namedWindow(App.SEMANTIC_WINDOW_NAME, cv.WINDOW_NORMAL)
-      # cv.resizeWindow(App.SEMANTIC_WINDOW_NAME, CONFIG.width, CONFIG.height)
 
   def clear(self):
     feature_database.clear()
@@ -72,6 +57,7 @@ class App:
     feature_database.initialize()
     try:
       self.serial.write_message(BladeMotorCommand('OFF'))
+      last_active = self.app_state.active
       if CONFIG.mode == AppMode.FOLLOW:
         accum = 0.0
         framerate = 0.0
@@ -86,6 +72,18 @@ class App:
             accum = 0.0
             framerate = 0.0
             n = 0
+          if last_active != self.app_state.active:
+            last_active = self.app_state.active
+            if not self.map_sent and self.app_state.active:
+              self.mqtt.publish_image()
+              self.mqtt.update_map_state(self.state)
+              self.map_sent = True
+            elif self.app_state.active:
+              map, x1, x2, z1, z2 = occupancy_database.visualize()
+              mpimg.imsave(os.path.join(CONFIG.databasePath, 'map.png'), map)
+              self.mqtt.update_bbox(x1, x2, z1, z2)
+              self.mqtt.publish_image()
+              self.mqtt.update_map_state(self.state)
           left, right = self.camera.read()
           image = left.copy()
           grayL = cv.cvtColor(left, cv.COLOR_BGR2GRAY)
@@ -111,10 +109,10 @@ class App:
           processed, last_probability = feature_database.observe(estimate, sensor_deviation, features, Observe.PROCESSED)
           feature_database.apply_features(processed)
           occupancy_database.apply_voxels(image, points3d, disparity, estimate)
-          # TODO: add semenatic Image to pipeline
-          semantic_image = self.get_semantic_image(image)
-          # if DebugWindows.SEMANTIC in CONFIG.windows:
-          #   cv.imshow(App.SEMANTIC_WINDOW_NAME, semantic_image)
+          action, depth_or_angle = self.control.track(image, points3d)
+          print("ACTION: {} @ {}".format(action, depth_or_angle))
+          if self.app_state.active:
+            self.control.execute_action(self.serial, action, depth_or_angle)
           self.state = estimate
           self.mqtt.update_map_state(self.state)
           print(self.state)
@@ -127,9 +125,9 @@ class App:
           current_time = datetime.now()
           cv.waitKey(30)
       elif CONFIG.mode == AppMode.BLADE:
-        last = self.app_state.active
         while True:
-          if last != self.app_state.active:
+          if last_active != self.app_state.active:
+            last_active = self.app_state.active
             if self.app_state.active:
               self.serial.write_message(BladeMotorCommand('ON'))
             else:
