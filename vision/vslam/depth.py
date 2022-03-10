@@ -12,8 +12,8 @@ class DepthEstimator:
   DEPTH_WINDOW_NAME = 'SGBM'
   LEFT_REMAP_WINDOW_NAME = 'REMAP.LEFT'
   RIGHT_REMAP_WINDOW_NAME = 'REMAP.RIGHT'
-  MIN_DISPARITY = 16
-  MAX_DISPARITY = 128
+  MIN_DISPARITY = 0
+  MAX_DISPARITY = 96
   APPLY_COLORMAP = False
 
   def __init__(self, width: int, height: int, params: CalibrationParameters) -> 'DepthEstimator':
@@ -25,20 +25,20 @@ class DepthEstimator:
     if DebugWindows.REMAP in CONFIG.windows:
       cv.namedWindow(DepthEstimator.LEFT_REMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(DepthEstimator.LEFT_REMAP_WINDOW_NAME, self.width, self.height)
-      cv.namedWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
+      cv.namedWindow(DepthEstimator.RIGHT_Rpython3EMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, self.width, self.height)
     self.params = params
     window_size = 3
     self.estimator = cv.StereoSGBM_create(
       minDisparity=DepthEstimator.MIN_DISPARITY,
       numDisparities=DepthEstimator.MAX_DISPARITY,
-      blockSize=16,
+      blockSize=21,
       P1=8 * 3 * window_size ** 2,
       P2=32 * 3 * window_size ** 2,
-      disp12MaxDiff=6,
-      uniquenessRatio=5,
+      disp12MaxDiff=25,
+      uniquenessRatio=0,
       speckleRange=32,
-      speckleWindowSize=100
+      speckleWindowSize=40
     )
   
   def applyImageRemap(self, left: Any, right: Any) -> Any:

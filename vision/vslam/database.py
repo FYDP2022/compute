@@ -23,7 +23,7 @@ import cv2 as cv
 from vslam.parameters import CameraParameters
 from vslam.utils import X_AXIS, Y_AXIS, Z_AXIS, Color, Position, Vector, angle_axis, angle_between, angle_between_about, normalize, normalize_basis, pixel_ray, projection, rotate_to, spherical_angles, spherical_coordinates, spherical_rotation_matrix
 from vslam.config import CONFIG
-from vslam.segmentation import Material
+from vslam.semantic import Material
 from vslam.state import Delta, Deviation, State
 
 # NOTE: bounding boxes are in the form (x1, x2, y1, y2, z1, z2)
