@@ -1,6 +1,10 @@
 scikit-build
+scikit-image
 opencv-contrib-python
 dataclasses
 Rtree
 Cython
 scipy
+torch
+torchvision
+icm20948

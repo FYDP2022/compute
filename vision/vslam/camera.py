@@ -1,14 +1,10 @@
 from enum import IntEnum
-import math
 import queue
 import signal
-import sys
 import threading
 from typing import Any, List, Tuple
 import cv2 as cv
-import numpy as np
 
-from vslam.parameters import CameraParameters
 from vslam.config import CONFIG, DebugWindows
 
 class CameraIndex(IntEnum):
@@ -33,15 +29,18 @@ class StereoCamera:
     self.capture: List[cv.VideoCapture] = [None, None]
     self.capture[CameraIndex.LEFT] = cv.VideoCapture(self._cameraString(CameraIndex.LEFT))
     self.capture[CameraIndex.RIGHT] = cv.VideoCapture(self._cameraString(CameraIndex.RIGHT))
-    signal.signal(signal.SIGINT, self._signalHandler)
     if not self.capture[CameraIndex.LEFT].isOpened():
       raise RuntimeError('failed to capture data from left camera')
     if not self.capture[CameraIndex.RIGHT].isOpened():
       raise RuntimeError('failed to capture data from right camera')
     self.t1 = threading.Thread(target=self._reader, args=[CameraIndex.LEFT])
+    self.t1.daemon = True
     self.t1.start()
     self.t2 = threading.Thread(target=self._reader, args=[CameraIndex.RIGHT])
+    self.t2.daemon = True
     self.t2.start()
+    self.handler = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, self._signalHandler)
     if DebugWindows.CAMERA in CONFIG.windows:
       cv.namedWindow(StereoCamera.LEFT_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(StereoCamera.LEFT_WINDOW_NAME, self.width, self.height)
@@ -49,32 +48,35 @@ class StereoCamera:
       cv.resizeWindow(StereoCamera.RIGHT_WINDOW_NAME, self.width, self.height)
 
   def close(self):
-    self.stopped = True
-    self.t1.join(5)
-    self.t2.join(5)
-    self.capture[CameraIndex.LEFT].release()
-    self.capture[CameraIndex.RIGHT].release()
+    if not self.stopped:
+      self.stopped = True
+      self.barrier.reset()
+      self.capture[CameraIndex.LEFT].release()
+      self.capture[CameraIndex.RIGHT].release()
 
   def _signalHandler(self, sig, frame):
     self.close()
-    sys.exit(0)
+    signal.signal(signal.SIGINT, self.handler)
 
   def _reader(self, camera: CameraIndex):
-    while not self.stopped:
-      ret, frame = self.capture[camera].read()
-      self.barrier.wait()
-      if not ret:
-        raise RuntimeError('failed to read camera sensor: {}'.format(camera))
-      if not self.queue[camera].empty():
-        try:
-          # discard previous (unprocessed) frame
-          self.queue[camera].get_nowait()
-        except queue.Empty:
-          pass
-      self.queue[camera].put(frame)
-    if self.barrier.n_waiting > 0:
-      self.barrier.reset()
-  
+    try:
+      while not self.stopped:
+        ret, frame = self.capture[camera].read()
+        self.barrier.wait()
+        if self.stopped:
+          break
+        if not ret:
+          raise RuntimeError('failed to read camera sensor: {}'.format(camera))
+        if not self.queue[camera].empty():
+          try:
+            # discard previous (unprocessed) frame
+            self.queue[camera].get_nowait()
+          except queue.Empty:
+            pass
+        self.queue[camera].put(frame)
+    except threading.BrokenBarrierError:
+      pass
+
   def _cameraString(self, camera: CameraIndex) -> str:
     return """
       nvarguscamerasrc sensor-id={}

@@ -1,7 +1,22 @@
+from enum import IntEnum, unique
+from typing import Any
+import cv2 as cv
+import numpy as np
+import os.path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
+use_cuda = torch.cuda.is_available()
+
+from vslam.config import CONFIG
+
+@unique
+class Material(IntEnum):
+  GRASS = 0
+  PERSON = 1
+  UNDEFINED = 2
 
 class Net(nn.Module):
   def __init__(self, criterion=None):
@@ -28,11 +43,25 @@ class Net(nn.Module):
       x = self.conv2(x)
       lfinal = self.bn2(x)
 
-<<<<<<< HEAD
-=======
-      
->>>>>>> master
       if self.training:
           return self.criterion(lfinal, gts)
       else:
           return lfinal
+
+class SemanticSegmenation:
+  def __init__(self):
+    pass
+
+  def get_semantic_image(self, image_processed):
+    return self.get_forwarded_image(image_processed.cuda())
+    
+  def process_inp_image(self, image):
+    colored_img = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+    torch_img = torch.from_numpy(colored_img).float()
+    return torch.permute(torch_img, (2, 0, 1))
+
+  def get_forwarded_image(self, net, image):
+    with torch.no_grad():
+      nn_seg_output = net.forward(image[None])
+    return torch.argmax(nn_seg_output, dim=1).cpu().numpy()[0]
+    

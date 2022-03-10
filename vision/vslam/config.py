@@ -8,7 +8,8 @@ class DebugWindows(Flag):
   REMAP = 2
   DEPTH = 4
   KEYPOINT = 8
-  ALL = 15
+  SEMANTIC = 16
+  ALL = 31
 
   def __contains__(self, item: 'DebugWindows'):
     return (self.value & item.value) == item.value
@@ -26,6 +27,8 @@ class DebugWindows(Flag):
       result = result | DebugWindows.DEPTH
     if 'keypoint' in split:
       result = result | DebugWindows.KEYPOINT
+    if 'semantic' in split:
+      result = result | DebugWindows.SEMANTIC
     if 'all' in split:
       return DebugWindows.ALL
     return result
@@ -39,7 +42,9 @@ class Config:
     dataPath: str = 'data',
     databasePath: str = 'com',
     width: int = 960,
-    height: int = 540
+    height: int = 540,
+    map_width: int = 500,
+    map_height: int = 750
   ) -> 'Config':
     self.debug = debug
     self.interval = interval
@@ -48,5 +53,7 @@ class Config:
     self.databasePath = databasePath
     self.width = width
     self.height = height
+    self.map_width = map_width
+    self.map_height = map_height
 
 CONFIG = Config()
