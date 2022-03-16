@@ -6,12 +6,13 @@ import cv2 as cv
 from datetime import datetime
 import matplotlib.image as mpimg
 import numpy as np
+import time
 from vslam.control import FollowControl
 from vslam.sensors import IMUSensor
 
 from vslam.client import MQTTClient
 from vslam.sensors import IMUSensor
-from vslam.arduino import BladeMotorCommand, OnOffCommand, SerialInterface
+from vslam.arduino import BladeMotorCommand, DriveMotorCommand, OnOffCommand, RelayCommand, SerialInterface
 from vslam.slam import GradientAscentSLAM
 from vslam.dynamics import DynamicsModel
 from vslam.parameters import CalibrationParameters
@@ -56,7 +57,11 @@ class App:
   def run(self):
     feature_database.initialize()
     try:
+      time.sleep(10)
+      self.serial.write_message(RelayCommand('ON'))
       self.serial.write_message(BladeMotorCommand('OFF'))
+      # self.serial.write_message(DriveMotorCommand('POINT_LEFT', -3, 30))
+      # time.sleep(5)
       last_active = self.app_state.active
       if CONFIG.mode == AppMode.FOLLOW:
         accum = 0.0
@@ -103,12 +108,12 @@ class App:
           points3d = cv.reprojectImageTo3D(disparity, self.params.Q)
           features = [Feature.create(k, image, points3d, disparity) for k in kp]
           features = [f for f in features if f]
-          vision_delta, probability, deviation = self.slam.step(estimate, sensor_deviation, features, last_probability)
-          estimate = estimate.apply_delta(vision_delta)
-          estimate = estimate.apply_deviation(deviation)
+          # vision_delta, probability, deviation = self.slam.step(estimate, sensor_deviation, features, last_probability)
+          # estimate = estimate.apply_delta(vision_delta)
+          # estimate = estimate.apply_deviation(deviation)
           processed, last_probability = feature_database.observe(estimate, sensor_deviation, features, Observe.PROCESSED)
           feature_database.apply_features(processed)
-          occupancy_database.apply_voxels(image, points3d, disparity, estimate)
+          occupancy_database.apply_voxels(image.copy(), points3d, disparity, estimate)
           action, depth_or_angle = self.control.track(image, points3d)
           print("ACTION: {} @ {}".format(action, depth_or_angle))
           if self.app_state.active:

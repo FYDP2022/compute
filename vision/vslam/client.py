@@ -49,7 +49,7 @@ class MQTTClient(mqtt.Client):
       incoming = str(msg.payload.decode("utf-8"))
       if incoming == "START":
         #ADD LAWNY STARTING CODE HERE
-        self.serial.write_message(RelayCommand('ON'))
+        # self.serial.write_message(RelayCommand('ON'))
         self.app_state.active = True
         print("Lawny Started message received - Execution started")
       elif incoming == "STOP":
@@ -60,7 +60,8 @@ class MQTTClient(mqtt.Client):
         print("INVALID STOP/START COMMAND")
 
   def on_publish(self, mqttc, obj, mid):
-    print("Data Published")
+    # print("Data Published")
+    pass
 
   def on_subscribe(self, mqttc, obj, mid, granted_qos):
     print("Subscribed to new Topic")

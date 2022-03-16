@@ -72,14 +72,14 @@ class FollowControl:
   def execute_action(self, serial: SerialInterface, action: ControlAction, depth_or_angle: float):
     distance = int((depth_or_angle - FollowControl.STOP_DISTANCE) * 100)
     if action == ControlAction.NONE:
-      serial.write_message(DriveMotorCommand('STOP', -7, 0))
+      serial.write_message(DriveMotorCommand('STOP', 0, 0))
     elif action == ControlAction.MOVE_FORWARD:
-      serial.write_message(DriveMotorCommand('FORWARD', -7, int(distance)))
+      serial.write_message(DriveMotorCommand('FORWARD', -3, int(distance)))
     elif action == ControlAction.MOVE_LEFT:
-      serial.write_message(DriveMotorCommand('FWD_LEFT', -7, int(depth_or_angle)))
+      serial.write_message(DriveMotorCommand('FWD_LEFT', -3, int(depth_or_angle)))
     elif action == ControlAction.MOVE_RIGHT:
-      serial.write_message(DriveMotorCommand('FWD_RIGHT', -7, int(depth_or_angle)))
+      serial.write_message(DriveMotorCommand('FWD_RIGHT', -3, int(depth_or_angle)))
     elif action == ControlAction.TURN_LEFT:
-      serial.write_message(DriveMotorCommand('POINT_LEFT', -7, int(depth_or_angle)))
+      serial.write_message(DriveMotorCommand('POINT_LEFT', -3, int(depth_or_angle)))
     elif action == ControlAction.TURN_RIGHT:
-      serial.write_message(DriveMotorCommand('POINT_RIGHT', -7, int(depth_or_angle)))
+      serial.write_message(DriveMotorCommand('POINT_RIGHT', -3, int(depth_or_angle)))

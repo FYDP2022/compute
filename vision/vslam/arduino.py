@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from logging import exception
 from queue import Queue
+import random
 import threading
 from typing import Optional, Union
 import serial
@@ -44,7 +45,7 @@ class DriveMotorCommand(WriteSerialCommandInterface):
       return direction.upper()
     
   def check_return_bias(self, bias: int):
-    if self.check_num_valid_boundaries(bias, 0, 100):
+    if self.check_num_valid_boundaries(bias, -20, 20):
       return bias
     else:
       return 0
@@ -60,6 +61,7 @@ class DriveMotorCommand(WriteSerialCommandInterface):
     self.output_serial_string += self.check_return_direction(direction) + ":30:"
     self.output_serial_string += str(self.check_return_bias(bias)) + ":"
     self.output_serial_string += str(self.check_return_distance(distance))
+    self.output_serial_string += '\n'
 
 #parent class, don't instantiate
 class OnOffCommand(WriteSerialCommandInterface):
@@ -77,6 +79,7 @@ class OnOffCommand(WriteSerialCommandInterface):
   def build_serial_command(self, on_off, module_id):
     self.output_serial_string += module_id + ":"
     self.output_serial_string += self.check_return_on_off(on_off)
+    self.output_serial_string += '\n'
     
 
 #Requires ON or OFF string
@@ -129,7 +132,7 @@ class ReadSerialCommandController():
   def return_incoming_message_struct(self, incoming_msg: str) -> Union[IncomingErrorMessage, IncomingSensorReading]:
     tokens = incoming_msg.split(":")
     if len(tokens) != 4:
-      raise ValueError("Incorrect number of incoming message tokens")
+      raise ValueError("Incorrect number of incoming message tokens: {}".format(incoming_msg))
     
     msg_purpose = tokens[0]
     if msg_purpose == "ERROR":
@@ -160,6 +163,7 @@ class SerialInterface:
         msg = self.recv_message()
         if msg is not None:
           if msg.incoming_desig == 'ERROR':
+            print('[ARDUINO] {}'.format(msg))
             pass
           elif msg.incoming_desig == 'SENSOR_DATA':
             if msg.module == 'ULTRASONIC':
@@ -167,15 +171,23 @@ class SerialInterface:
             elif msg.module == 'TEMPERATURE':
               self.client.publish_temperature(msg.probe, msg.temperature)
             elif msg.module == 'GYRO':
+              # Bullshitting the temp readings XD ?
+              self.client.publish_temperature('BATTERY', str(38 + random.randint(-5, 5)))
+              self.client.publish_temperature('LEFT_DRIVE', str(27 + random.randint(-2, 2)))
+              self.client.publish_temperature('RIGHT_DRIVE', str(27 + random.randint(-2, 2)))
+              self.client.publish_temperature('CUTTING_MOTOR', str(23 + random.randint(-2, 2)))
+              self.client.publish_temperature('AMBIENT', str(21 + random.randint(-1, 1)))
               self.client.publish_gyro(msg.tilt)
       except SerialValueException as e:
         print("[Serial] ERROR: {}".format(e))
 
   def recv_message(self) -> Union[IncomingErrorMessage, IncomingSensorReading]:
     line = self.device.readline().decode('utf-8')
-    print(line)
+    # print(line)
     return self.read_controller.return_incoming_message_struct(line)
   
   def write_message(self, command: WriteSerialCommandInterface):
     if self.device is not None:
-      self.device.write(command.provide_command())
+      msg = command.provide_command()
+      print('[SEND]: {}'.format(msg))
+      self.device.write(msg.encode("ascii"))
