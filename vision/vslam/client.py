@@ -10,7 +10,7 @@ import cv2 as cv
 import paho.mqtt.client as mqtt
 
 from vslam.config import CONFIG
-from vslam.arduino import OnOffCommand, RelayCommand, SerialInterface
+from vslam.arduino import DriveMotorCommand, OnOffCommand, RelayCommand, SerialInterface
 from vslam.state import AppState, State
 from vslam.utils import Y_AXIS, Z_AXIS, angle_between_about, normalize
 
@@ -23,8 +23,9 @@ class MQTTClient(mqtt.Client):
     self.map_x2 = map_x2
     self.map_z1 = map_z1
     self.map_z2 = map_z2
-    self.connect("localhost", 1883, 5)
+    self.connect("localhost", 1883, 30)
     self.subscribe("StartStopTopic", 2)
+    self.subscribe("RCControl", 2)
     self.loop_start()
   
   def initialize(self, serial: SerialInterface):
@@ -54,10 +55,20 @@ class MQTTClient(mqtt.Client):
         print("Lawny Started message received - Execution started")
       elif incoming == "STOP":
         #ADD LAWNY STOPPING CODE (BEFORE MQTT DISCONNECT, AND CHECK IF SENT BEFORE DISCONNECTION OCCURS)
-        self.disconnect()
+        self.app_state.active = False
         print("Lawny Stop message received - Lawny execution shut down")
       else:
         print("INVALID STOP/START COMMAND")
+    elif msg.topic == "RCControl":
+      incoming = str(msg.payload.decode("utf-8"))
+      if incoming == 'FORWARD':
+        self.serial.write_message(DriveMotorCommand('FORWARD', -3, 15))
+      elif incoming == 'RIGHT':
+        self.serial.write_message(DriveMotorCommand('POINT_RIGHT', -3, 30))
+      elif incoming == 'LEFT':
+        self.serial.write_message(DriveMotorCommand('POINT_LEFT', -3, 30))
+      elif incoming == 'BACK':
+        self.serial.write_message(DriveMotorCommand('REVERSE', -3, 15))
 
   def on_publish(self, mqttc, obj, mid):
     # print("Data Published")
@@ -75,8 +86,12 @@ class MQTTClient(mqtt.Client):
     self.publish("UltrasonicTopic", send_msg, qos=2)
   
   def publish_gyro(self, tilt: str):
-    send_msg = "tilt:" + tilt
-    self.publish("GyroTopic", send_msg, qos=2)
+    send_msg = tilt
+    self.publish("GyroscopeTopic", send_msg, qos=2)
+  
+  def publish_accel(self, accel: str):
+    send_msg = accel
+    self.publish("AccelerationTopic", send_msg, qos=2)
 
   def publish_battery(self, battery: str):
     self.publish("BatteryTopic", battery, qos=2)

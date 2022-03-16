@@ -57,7 +57,7 @@ class App:
   def run(self):
     feature_database.initialize()
     try:
-      time.sleep(10)
+      time.sleep(1)
       self.serial.write_message(RelayCommand('ON'))
       self.serial.write_message(BladeMotorCommand('OFF'))
       # self.serial.write_message(DriveMotorCommand('POINT_LEFT', -3, 30))
@@ -113,11 +113,11 @@ class App:
           # estimate = estimate.apply_deviation(deviation)
           processed, last_probability = feature_database.observe(estimate, sensor_deviation, features, Observe.PROCESSED)
           feature_database.apply_features(processed)
-          occupancy_database.apply_voxels(image.copy(), points3d, disparity, estimate)
+          occupancy_database.apply_voxels(image, points3d, disparity, estimate)
           action, depth_or_angle = self.control.track(image, points3d)
           print("ACTION: {} @ {}".format(action, depth_or_angle))
-          if self.app_state.active:
-            self.control.execute_action(self.serial, action, depth_or_angle)
+          # if self.app_state.active:
+          self.control.execute_action(self.serial, action, depth_or_angle)
           self.state = estimate
           self.mqtt.update_map_state(self.state)
           print(self.state)
@@ -128,13 +128,14 @@ class App:
           n += 1
           last_time = current_time
           current_time = datetime.now()
-          cv.waitKey(30)
+          cv.waitKey(60)
       elif CONFIG.mode == AppMode.BLADE:
         while True:
           if last_active != self.app_state.active:
             last_active = self.app_state.active
             if self.app_state.active:
               self.serial.write_message(BladeMotorCommand('ON'))
+              self.mqtt.publish_battery('43')
             else:
               self.serial.write_message(BladeMotorCommand('OFF'))
     except Exception as e:
