@@ -14,7 +14,7 @@ from vslam.semantic import Material
 from vslam.arduino import DriveMotorCommand, SerialInterface
 
 class FollowControl:
-  STOP_DISTANCE = 1.0
+  STOP_DISTANCE = 0.3
   CONTROL_WINDOW_NAME = 'CONTROL'
 
   def __init__(self) -> None:
@@ -27,30 +27,35 @@ class FollowControl:
 
   def track(self, image, points3d) -> Tuple[ControlAction, float]:
     THRESHOLD = 0.1
-    rects, weights = self.hog.detectMultiScale(image, winStride=(4, 4), padding=(8, 8), scale=1.05)
-    rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in rects])
-    max = None
-    for idx, weight in enumerate(weights):
-      if max is None or weight[0] > weights[idx][0]:
-        max = idx
-    print(weights)
+    # rects, weights = self.hog.detectMultiScale(image, winStride=(8, 8), scale=1.05)
+    # rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in rects])
+    # max = None
+    # for idx, weight in enumerate(weights):
+    #   if max is None or weight[0] > weights[idx][0]:
+    #     max = idx
+    # print(weights)
     # pick = non_max_suppression(rects, probs=None, overlapThresh=0.65)
     # for (xA, yA, xB, yB) in pick:
     #   cv.rectangle(image, (xA, yA), (xB, yB), (0, 255, 0), 2)
 
-    if DebugWindows.CONTROL in CONFIG.windows:
-      for (x, y, w, h) in rects:
-        cv.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 2)
-      mpimg.imsave(os.path.join(CONFIG.databasePath, 'test.png'), image)
-      cv.imshow(FollowControl.CONTROL_WINDOW_NAME, image)
-    
-    if max is not None and weights[max][0] > THRESHOLD:
-      x, y, w, h = rects[max]
-      box = points3d[x:x+w, y:y+h, 2] / 10000.0
+    ret, corners = cv.findChessboardCorners(image, (9, 6), None, cv.CALIB_CB_ADAPTIVE_THRESH)
+    if ret:
+      corners = np.array(corners)
+      minx = int(np.min(corners[:, 0, 0]))
+      maxx = int(np.max(corners[:, 0, 0]))
+      miny = int(np.min(corners[:, 0, 1]))
+      maxy = int(np.max(corners[:, 0, 1]))
+
+      if DebugWindows.CONTROL in CONFIG.windows:
+        cv.rectangle(image, (minx, miny), (maxx, maxy), (0, 0, 255), 2)
+        mpimg.imsave(os.path.join(CONFIG.databasePath, 'test.png'), image)
+        cv.imshow(FollowControl.CONTROL_WINDOW_NAME, image)
+
+      box = points3d[minx:maxx, miny:maxy, 2] / 10000.0
       box[box < 0.0] = np.inf
       masked = np.ma.masked_where(box == np.inf, box)
-      depth = np.ma.mean(masked)
-      xmid = x + w / 2
+      depth = np.ma.median(masked)
+      xmid = (minx + maxx) / 2
       angle = (CameraParameters.FOVX / 2) * (xmid - CONFIG.width / 2) / (CONFIG.width / 2)
       if xmid > 1.10 * (CONFIG.width / 2):
         if depth < FollowControl.STOP_DISTANCE:
