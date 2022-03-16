@@ -25,7 +25,7 @@ class DepthEstimator:
     if DebugWindows.REMAP in CONFIG.windows:
       cv.namedWindow(DepthEstimator.LEFT_REMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(DepthEstimator.LEFT_REMAP_WINDOW_NAME, self.width, self.height)
-      cv.namedWindow(DepthEstimator.RIGHT_Rpython3EMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
+      cv.namedWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(DepthEstimator.RIGHT_REMAP_WINDOW_NAME, self.width, self.height)
     self.params = params
     window_size = 3
