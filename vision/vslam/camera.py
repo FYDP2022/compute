@@ -17,8 +17,8 @@ class StereoCamera:
 
   LEFT_WINDOW_NAME = 'CAMERA.LEFT'
   RIGHT_WINDOW_NAME = 'CAMERA.RIGHT'
-  WIDTH = 1280
-  HEIGHT = 720
+  WIDTH = 1920
+  HEIGHT = 1080
 
   def __init__(self, width: int, height: int) -> 'StereoCamera':
     self.width = width
@@ -30,6 +30,12 @@ class StereoCamera:
     self.mutex = threading.Lock()
     self.ready = [0, 0]
     self.capture: List[cv.VideoCapture] = [None, None]
+    self.capture[CameraIndex.LEFT] = cv.VideoCapture(self._cameraString(CameraIndex.LEFT))
+    if not self.capture[CameraIndex.LEFT].isOpened():
+      raise RuntimeError('failed to capture data from camera {}'.format(CameraIndex.LEFT))
+    self.capture[CameraIndex.RIGHT] = cv.VideoCapture(self._cameraString(CameraIndex.RIGHT))
+    if not self.capture[CameraIndex.RIGHT].isOpened():
+      raise RuntimeError('failed to capture data from camera {}'.format(CameraIndex.RIGHT))
     self.t1 = threading.Thread(target=self._reader, args=[CameraIndex.LEFT])
     self.t1.daemon = True
     self.t1.start()
@@ -38,6 +44,7 @@ class StereoCamera:
     self.t2.start()
     self.handler = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, self._signalHandler)
+    time.sleep(2)
     if DebugWindows.CAMERA in CONFIG.windows:
       cv.namedWindow(StereoCamera.LEFT_WINDOW_NAME, cv.WINDOW_NORMAL)
       cv.resizeWindow(StereoCamera.LEFT_WINDOW_NAME, self.width, self.height)
@@ -46,6 +53,7 @@ class StereoCamera:
 
   def close(self):
     if not self.stopped:
+      print('STOPPED')
       self.stopped = True
       self.barrier.reset()
       self.capture[CameraIndex.LEFT].release()
@@ -56,9 +64,6 @@ class StereoCamera:
     signal.signal(signal.SIGINT, self.handler)
 
   def _reader(self, camera: CameraIndex):
-    self.capture[camera] = cv.VideoCapture(self._cameraString(camera))
-    if not self.capture[camera].isOpened():
-      raise RuntimeError('failed to capture data from camera')
     try:
       while not self.stopped:
         self.barrier.wait()
@@ -97,7 +102,7 @@ class StereoCamera:
       ! video/x-raw,
         format=(string)BGR
       ! appsink
-    """.format(camera, StereoCamera.WIDTH, StereoCamera.HEIGHT, self.width, self.height)
+    """.format(camera.value, StereoCamera.WIDTH, StereoCamera.HEIGHT, self.width, self.height)
 
   def swapCameras(self):
     self.reverse = not self.reverse
@@ -105,6 +110,8 @@ class StereoCamera:
   def _getFrame(self):
     while True:
       self.mutex.acquire()
+      if self.stopped:
+        raise RuntimeError('Tried to read closed camera')
       if self.ready[CameraIndex.LEFT] == self.ready[CameraIndex.RIGHT] and not self.queue[CameraIndex.LEFT].empty():
         break
       self.mutex.release()

@@ -56,6 +56,11 @@ class State:
 
 class ControlAction(Enum):
   NONE = 0
+  TURN_LEFT = 1
+  TURN_RIGHT = 2
+  MOVE_LEFT = 3
+  MOVE_RIGHT = 4
+  MOVE_FORWARD = 5
 
 @dataclass
 class ControlState:

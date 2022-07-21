@@ -39,18 +39,21 @@ class IMUSensor:
     last_time = datetime.now()
     current_time = datetime.now()
     while not self.stopped:
-      ax, ay, az, gx, gy, gz = self.imu.read_accelerometer_gyro_data()
-      current_time = datetime.now()
-      self.mutex.acquire()
-      self.accel.append(-np.asarray([ax, -ay, az]) - self.accel_bias)
-      # Negate for CCW rotations
-      self.gyro.append(np.radians(np.asarray([gx, gy, gz])) - self.gyro_bias)
-      self.delta.append((current_time - last_time).total_seconds())
-      self.mutex.release()
-      last_time = current_time
-      self.first = True
-      time.sleep(1.0 / 15.0)
-  
+      try:
+        ax, ay, az, gx, gy, gz = self.imu.read_accelerometer_gyro_data()
+        current_time = datetime.now()
+        self.mutex.acquire()
+        self.accel.append(-np.asarray([ax, -ay, az]) - self.accel_bias)
+        # Negate for CCW rotations
+        self.gyro.append(np.radians(np.asarray([gx, gy, gz])) - self.gyro_bias)
+        self.delta.append((current_time - last_time).total_seconds())
+        self.mutex.release()
+        last_time = current_time
+        self.first = True
+        time.sleep(1.0 / 15.0)
+      except Exception as e:
+        pass
+
   def read(self) -> Tuple[Any, Any, Any]:
     self.mutex.acquire()
     accel = self.accel
